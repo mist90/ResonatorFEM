@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <algorithm>
+#include <cstdlib>
 #include <Eigen/Sparse>
 #include <Spectra/SymGEigsShiftSolver.h>
 #include <Spectra/MatOp/SymShiftInvert.h>
@@ -81,48 +82,38 @@ bool MathEighValVector(MathMatrixSparse<double>& matrixA, MathMatrixSparse<doubl
     return true;
 }
 
-bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
-                                  double sigma, int nev,
-                                  std::vector<double>& eighValue, std::vector<double>& eigVector)
+/* Convert a symmetric, fully-populated MathMatrixSparse to Eigen sparse. */
+static Eigen::SparseMatrix<double> toEigen(MathMatrixSparse<double>& M, int n)
 {
-    if(matrixA.width() != matrixA.height()) return false;
-    if(matrixB.width() != matrixB.height()) return false;
-    if(matrixA.width() != matrixB.width())  return false;
-
-    const int n = (int)matrixA.width();
-    if(n <= 2) return false;
-
-    /* Convert to Eigen sparse (both matrices are symmetric and fully populated). */
-    std::vector<Eigen::Triplet<double> > tripA, tripB;
+    std::vector<Eigen::Triplet<double> > trip;
     for(int col = 0; col < n; col++)
         for(int row = 0; row < n; row++)
         {
-            double a = matrixA.element((uint32_t)col, (uint32_t)row);
-            double b = matrixB.element((uint32_t)col, (uint32_t)row);
-            if(a != 0.0) tripA.emplace_back(row, col, a);
-            if(b != 0.0) tripB.emplace_back(row, col, b);
+            double v = M.element((uint32_t)col, (uint32_t)row);
+            if(v != 0.0) trip.emplace_back(row, col, v);
         }
-    Eigen::SparseMatrix<double> Ae(n, n), Be(n, n);
-    Ae.setFromTriplets(tripA.begin(), tripA.end());
-    Be.setFromTriplets(tripB.begin(), tripB.end());
+    Eigen::SparseMatrix<double> E(n, n);
+    E.setFromTriplets(trip.begin(), trip.end());
+    return E;
+}
 
+/* Core shift-invert: `nev` eigenpairs of Ae x = lambda Be x nearest `sigma`.
+ * Retries perturbed shifts if (Ae - shift*Be) hits an eigenvalue. */
+static bool shiftInvertCore(const Eigen::SparseMatrix<double>& Ae,
+                            const Eigen::SparseMatrix<double>& Be,
+                            double sigma, int nev,
+                            Eigen::VectorXd& vals, Eigen::MatrixXd& vecs)
+{
+    const int n = (int)Ae.rows();
     if(nev < 1) nev = 1;
     if(nev > n - 2) nev = n - 2;
-    /* A generous Arnoldi subspace helps convergence to interior eigenvalues near
-     * a large null space. */
     int ncv = std::min(n, std::max(4 * nev + 1, 60));
 
     using OpType  = Spectra::SymShiftInvert<double, Eigen::Sparse, Eigen::Sparse>;
     using BOpType = Spectra::SparseSymMatProd<double>;
     BOpType Bop(Be);
 
-    /* Factorizing (A - shift*B) fails if `shift` coincides with an eigenvalue
-     * (including a spurious one). Retry with small multiplicative perturbations
-     * around the requested sigma until one factorizes and converges. */
     const double perturb[] = { 1.0, 1.02, 0.98, 1.05, 0.95, 1.09, 0.91 };
-    Eigen::VectorXd vals;
-    Eigen::MatrixXd vecs;
-    bool ok = false;
     for(double f : perturb) {
         double s = sigma * f;
         try {
@@ -134,20 +125,20 @@ bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixS
             if(geigs.info() == Spectra::CompInfo::Successful) {
                 vals = geigs.eigenvalues();
                 vecs = geigs.eigenvectors();
-                ok = true;
-                break;
+                return true;
             }
-            std::fprintf(stderr, "  shift %g: not converged\n", s);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "  shift %g: %s\n", s, e.what());
+        } catch (const std::exception&) {
+            /* singular (Ae - s*Be); try the next perturbed shift. */
         }
     }
-    if(!ok) {
-        std::fprintf(stderr, "shift-invert failed near sigma=%g (nev=%d ncv=%d n=%d)\n",
-                     sigma, nev, ncv, n);
-        return false;
-    }
+    std::fprintf(stderr, "shift-invert failed near sigma=%g (nev=%d n=%d)\n", sigma, nev, n);
+    return false;
+}
 
+/* Pack Eigen results into the (eighValue, eigVector[row + mode*n]) layout. */
+static void packResults(const Eigen::VectorXd& vals, const Eigen::MatrixXd& vecs, int n,
+                        std::vector<double>& eighValue, std::vector<double>& eigVector)
+{
     const int k = (int)vals.size();
     eighValue.resize(k);
     for(int i = 0; i < k; i++) eighValue[i] = vals[i];
@@ -155,5 +146,81 @@ bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixS
     for(int mode = 0; mode < k; mode++)
         for(int row = 0; row < n; row++)
             eigVector[(std::size_t)row + (std::size_t)mode * n] = vecs(row, mode);
+}
+
+bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
+                                  double sigma, int nev,
+                                  std::vector<double>& eighValue, std::vector<double>& eigVector)
+{
+    if(matrixA.width() != matrixA.height()) return false;
+    if(matrixB.width() != matrixB.height()) return false;
+    if(matrixA.width() != matrixB.width())  return false;
+    const int n = (int)matrixA.width();
+    if(n <= 2) return false;
+
+    Eigen::SparseMatrix<double> Ae = toEigen(matrixA, n);
+    Eigen::SparseMatrix<double> Be = toEigen(matrixB, n);
+    Eigen::VectorXd vals;
+    Eigen::MatrixXd vecs;
+    if(!shiftInvertCore(Ae, Be, sigma, nev, vals, vecs)) return false;
+    packResults(vals, vecs, n, eighValue, eigVector);
+    return true;
+}
+
+bool MathEighValVectorShiftInvertGauged(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
+                                        const std::vector<std::pair<uint32_t, uint32_t> >& dofNodes,
+                                        const std::vector<double>& dofLen,
+                                        uint32_t nNodes, double penaltyS, double sigma, int nev,
+                                        std::vector<double>& eighValue, std::vector<double>& eigVector)
+{
+    if(matrixA.width() != matrixA.height()) return false;
+    if(matrixB.width() != matrixB.height()) return false;
+    if(matrixA.width() != matrixB.width())  return false;
+    const int n = (int)matrixA.width();
+    if(n <= 2 || (int)dofNodes.size() != n || (int)dofLen.size() != n || nNodes == 0) return false;
+
+    Eigen::SparseMatrix<double> Ae = toEigen(matrixA, n);   /* stiffness S */
+    Eigen::SparseMatrix<double> Be = toEigen(matrixB, n);   /* mass T      */
+
+    /* Discrete gradient G (n edges x nNodes): edge d = (tail a, head b), scaled
+     * by edge length for this len*Whitney basis.
+     *
+     * EXPERIMENTAL / WIP: the exact discrete gradient of this hand-rolled,
+     * length-scaled edge basis is not yet fully identified — empirically the
+     * residual ||S*G||/||S|| bottoms out around 0.15 (not ~0), so G is not quite
+     * in the null space of S and the penalty still perturbs the physical modes.
+     * Consequently the grad-div penalty is OFF by default (penaltyFactor = 0);
+     * getting the null-space projection exact is a focused follow-up. The
+     * *formulation* below is correct given a correct G: P = (T G) D^-1 (Gᵀ T) is
+     * zero on physical modes (Gᵀ T e = 0) and lifts the gradient modes. */
+    std::vector<Eigen::Triplet<double> > gtrip;
+    gtrip.reserve((std::size_t)n * 2);
+    for(int d = 0; d < n; d++) {
+        uint32_t a = dofNodes[d].first, b = dofNodes[d].second;
+        if(a == UINT32_MAX || dofLen[d] <= 0.0) continue;
+        double w = dofLen[d];
+        gtrip.emplace_back(d, (int)a, -w);
+        gtrip.emplace_back(d, (int)b, +w);
+    }
+    Eigen::SparseMatrix<double> G((int)n, (int)nNodes);
+    G.setFromTriplets(gtrip.begin(), gtrip.end());
+
+    /* Mass-metric grad-div penalty: P = (T G) D^-1 (G^T T), D = diag(G^T T G).
+     * P e = 0 for physical modes (G^T T e = 0), so they are preserved exactly;
+     * gradient (null-space) modes are lifted to ~penaltyS. */
+    Eigen::SparseMatrix<double> TG = Be * G;                 /* n x nNodes    */
+    Eigen::SparseMatrix<double> L  = Eigen::SparseMatrix<double>(G.transpose()) * TG; /* nNodes^2 = G^T T G */
+    Eigen::VectorXd dinv(nNodes);
+    for(uint32_t k = 0; k < nNodes; k++) {
+        double dk = L.coeff((int)k, (int)k);
+        dinv[k] = (dk > 1e-30) ? 1.0 / dk : 0.0;
+    }
+    Eigen::SparseMatrix<double> P = TG * dinv.asDiagonal() * Eigen::SparseMatrix<double>(TG.transpose());
+    Eigen::SparseMatrix<double> Aeff = Ae + penaltyS * P;
+
+    Eigen::VectorXd vals;
+    Eigen::MatrixXd vecs;
+    if(!shiftInvertCore(Aeff, Be, sigma, nev, vals, vecs)) return false;
+    packResults(vals, vecs, n, eighValue, eigVector);
     return true;
 }

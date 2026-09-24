@@ -53,9 +53,14 @@ public:
      * modes with k^2 nearest `sigmaK2`. Targets the physical range directly and
      * scales to fine meshes. Pass sigmaK2 < 0 to fall back to the dense solver. */
     void            setResonatorSolveTarget(double sigmaK2, int nev);
-    /* Enable/disable tree-cotree gauging (default on): removes the gradient
-     * null space so the smallest eigenvalues are the physical modes. */
+    /* Enable/disable tree-cotree gauging (default off — see MicroEngine.cpp). */
     void            setGauge(bool enable);
+    /* Grad-div penalty (resonator mode): add factor * meanDiag(S) * G Gᵀ to the
+     * stiffness, where G is the discrete gradient. Lifts the gradient null-space
+     * modes to higher k² so the physical modes (nearly divergence-free) become
+     * the smallest eigenvalues — needed for very-low-frequency modes (spiral).
+     * factor = 0 disables it (default). */
+    void            setGradDivPenalty(double factor);
     void            setSizeGrid(const double& dx, const double& dy, const double& dz);
     double          getDx();
     double          getDy();
@@ -152,6 +157,8 @@ private:
      * keyed by sorted node serial numbers. */
     bool            useGauge;
     std::set<std::pair<uint32_t, uint32_t> > gaugeEdges;
+    /* Grad-div penalty weight factor (0 = off). */
+    double          penaltyFactor;
 };
 
 

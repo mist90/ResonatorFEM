@@ -1,5 +1,7 @@
 #include "MicroEngine.h"
 #include <stdio.h>
+#include <cstdint>
+#include <vector>
 
 /* вычисление C для абсорбционных условий */
 double getValueC(double *b, double *c, double *d, uint32_t indexPi, uint32_t indexQj, const MathVector3D& normVector)
@@ -73,6 +75,7 @@ MicroEngine::MicroEngine()
      * inhabit). Correct null-space removal needs a mass-metric projection /
      * grad-div penalty (see docs/RESULTS.md). Kept behind a flag for study. */
     useGauge = false;
+    penaltyFactor = 0.0;
 }
 
 MicroEngine::MicroEngine(MathGrapher &grapher)
@@ -94,6 +97,7 @@ MicroEngine::MicroEngine(MathGrapher &grapher)
      * inhabit). Correct null-space removal needs a mass-metric projection /
      * grad-div penalty (see docs/RESULTS.md). Kept behind a flag for study. */
     useGauge = false;
+    penaltyFactor = 0.0;
 }
 
 bool MicroEngine::generateFromMesh(const FemMesh &mesh)
@@ -135,6 +139,11 @@ void MicroEngine::setResonatorSolveTarget(double sigmaK2, int nev)
 void MicroEngine::setGauge(bool enable)
 {
     useGauge = enable;
+}
+
+void MicroEngine::setGradDivPenalty(double factor)
+{
+    penaltyFactor = factor;
 }
 
 /* Union-find helpers for spanning-tree construction. */
@@ -837,14 +846,44 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
 
     }
     widthGlobalMatrix = globalMatrixT.width();
+
+    /* For the grad-div (mass-metric) penalty, extract the discrete gradient G:
+     * the reference-orientation node serials of each free DOF, taken from the
+     * EDGE_FREE table entries. The solver forms s*(T G) D^-1 (Gᵀ T). */
+    std::vector<std::pair<uint32_t, uint32_t> > dofNodes;
+    std::vector<double> dofLen;
+    double penaltyS = 0.0;
+    if(penaltyFactor > 0.0 && widthGlobalMatrix > 0)
+    {
+        dofNodes.assign(widthGlobalMatrix, std::make_pair(UINT32_MAX, UINT32_MAX));
+        dofLen.assign(widthGlobalMatrix, 1.0);
+        for(i = 0; i < globalTable.size(); i++)
+            if(!globalTable[i].isFlags(EDGE_NULL) && globalTable[i].isFlags(EDGE_FREE))
+            {
+                MicroEdge e = globalTable[i].getEdge();
+                uint32_t dof = globalTable[i].getNumElement();
+                dofNodes[dof] = std::make_pair(e.getNode1()->getSerialNumber(), e.getNode2()->getSerialNumber());
+                dofLen[dof] = e.lenEdge();
+            }
+        double meanDiag = 0.0;
+        for(uint32_t d = 0; d < widthGlobalMatrix; d++) meanDiag += globalMatrixT.element(d, d);
+        meanDiag /= (double)widthGlobalMatrix;
+        penaltyS = penaltyFactor * meanDiag;   /* lifts null-space modes to ~penaltyS */
+    }
+
     /* освобождение памяти */
     epsilonValuesTetraedrs.clear();
     /* решение СЛАУ и нахождение собственных значений */
     emit startSolveMatrix();
-    /* решение задачи TX=k^2 RX: sparse shift-invert around a target (scales to
-     * fine meshes, skips the null space) or dense full-spectrum fallback. */
+    /* решение задачи TX=k^2 RX. With the grad-div penalty the gradient null space
+     * is lifted, so the physical modes are the smallest eigenvalues; otherwise
+     * sparse shift-invert around a target, or the dense full-spectrum fallback. */
     bool solved;
-    if(solveSigmaK2 >= 0.0)
+    if(penaltyS > 0.0)
+        solved = MathEighValVectorShiftInvertGauged(globalMatrixT, globalMatrixR, dofNodes, dofLen,
+                     grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
+                     solveNev, eighValue, rootsGlobalMatrix);
+    else if(solveSigmaK2 >= 0.0)
         solved = MathEighValVectorShiftInvert(globalMatrixT, globalMatrixR, solveSigmaK2, solveNev, eighValue, rootsGlobalMatrix);
     else
         solved = MathEighValVector(globalMatrixT, globalMatrixR, eighValue, rootsGlobalMatrix);

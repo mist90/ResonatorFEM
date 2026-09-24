@@ -141,6 +141,29 @@ the recommended next numerical step for the spiral's very-low fundamental.
 Meanwhile the **shift-invert solver (default) already handles standard cavities
 well** (cylinder −0.11 %, box, coaxial), which covers most of the shape matrix.
 
+## Grad-div penalty (null-space removal) — infrastructure in place, WIP
+
+To pull very-low-frequency physical modes (e.g. the spiral fundamental) out of the
+gradient null-space, `MathEighValVectorShiftInvertGauged` implements a **mass-metric
+grad-div penalty**: solve `(S + s·(TG) D⁻¹ (GᵀT)) e = k² T e`, where `G` is the
+discrete gradient and `D = diag(GᵀTG)`. This penalty is **exactly zero on physical
+modes** (they satisfy `GᵀT e = 0`), so it preserves them at any strength `s` while
+lifting the gradient modes to ~`s` — the correct construction, unlike the Euclidean
+`GGᵀ` penalty (which perturbs physical modes) and unlike tree-cotree zeroing (which
+corrupts the eigenproblem).
+
+**Status: off by default (`penaltyFactor = 0`), pending one fix.** The penalty is
+only as good as `G`. This code's edge basis is `len·Whitney` (length-scaled), and
+the exact discrete gradient in that basis isn't fully pinned down yet: empirically
+`‖S·G‖/‖S‖` bottoms out around 0.15 (want ~0) across the ±1 / ×len / ÷len scalings,
+so `G` isn't quite in `null(S)` and the penalty still perturbs the physical modes.
+Nailing the gradient's orientation/normalization for this basis (so `S·G ≈ 0`) is
+the focused follow-up that will switch the penalty on. The formulation and assembly
+(Eigen sparse `TG`, `GᵀTG`, `D⁻¹`, shift-invert on the penalized pencil) are done.
+
+The `resonator_cli` env hooks `PENALTY=<factor>` and `SIGMA=<k²>` drive this path for
+study.
+
 ## Dense eigen-solve: robustness and scaling — background
 
 - **Dense eigen-solve: robustness and scaling.** `dsygv` is O(n³) / O(n²) memory

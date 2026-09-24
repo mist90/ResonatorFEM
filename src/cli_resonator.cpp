@@ -107,7 +107,13 @@ int main(int argc, char** argv)
      * space, and scales to fine meshes. */
     double targetK2 = std::pow(2.0 * M_PI * analyticTM010_MHz * 1.0e6 / C_LIGHT, 2.0);
     double sigmaK2 = 0.9 * targetK2;   /* sit in the gap just below the target mode */
+    if (const char* sigEnv = std::getenv("SIGMA")) sigmaK2 = std::atof(sigEnv);  /* test override */
     engine.setResonatorSolveTarget(sigmaK2, 12);
+    if (const char* penEnv = std::getenv("PENALTY")) {
+        double f = std::atof(penEnv);
+        engine.setGradDivPenalty(f);
+        std::printf("grad-div penalty factor = %g\n", f);
+    }
     std::printf("shift-invert: target %.1f MHz (k^2=%.4f), shift sigma=%.4f\n",
                 analyticTM010_MHz, targetK2, sigmaK2);
     if (!engine.generateFromMesh(mesh)) {
