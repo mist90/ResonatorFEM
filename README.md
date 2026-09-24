@@ -45,9 +45,18 @@ modes:
 See `docs/PLAN.md` (design + FEM↔mesh contract) and `docs/RESULTS.md` (validation
 results, numerical findings, and known limitations).
 
+## GUI
+
+`ResonatorFEM` is a Qt/OpenGL app: pick the cavity and core shapes from dropdowns,
+set the parameters, click **Compute modes**, and read the resonant frequencies
+while the mesh renders in the 3D view. The parametric backend
+(`CsgGmshMesher::buildResonator`) covers cavity {cylinder, box} × core {none,
+cylinder, box, spiral}.
+
 ## Status
 
-Milestones 1–2 validated; the spiral geometry builds, meshes, and solves. Known
-numerical follow-up: a mass-metric null-space projection / grad-div penalty for
-robust extraction of very-low-frequency modes (e.g. the spiral fundamental) — see
-`docs/RESULTS.md`.
+Working end to end: geometry → Gmsh/OCC mesh → edge-element FEM → grad-div-gauged
+sparse eigensolve → GUI. Cavities validated against analytic modes (cyl −0.3%,
+box −0.5%, coax +0.8%); the spiral fundamental converges to the helical
+quarter-wave estimate. Remaining polish (spiral gauge residual on curved walls,
+off-thread solve, license/CI) is tracked in `docs/RESULTS.md`.

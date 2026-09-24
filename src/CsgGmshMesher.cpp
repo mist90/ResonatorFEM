@@ -75,6 +75,41 @@ bool extractCurrentMesh(FemMesh& out, std::string* err)
     return true;
 }
 
+/* Build a helical elliptical-cross-section solid centred on the axis (cx,cy),
+ * starting at z=zBottom. Returns the OCC volume tag, or -1 on failure. */
+int makeHelixSolid(double cx, double cy, double zBottom,
+                   double helixR, double pitch, double turns, double ellA, double ellB)
+{
+    const double totalAngle = turns * 2.0 * M_PI;
+    const int perTurn = 24;
+    const int nPts = (int)(perTurn * turns) + 1;
+    std::vector<int> pts;
+    pts.reserve(nPts);
+    for (int i = 0; i < nPts; ++i) {
+        double t = totalAngle * (double)i / (double)(nPts - 1);
+        pts.push_back(gmsh::model::occ::addPoint(cx + helixR * std::cos(t),
+                                                 cy + helixR * std::sin(t),
+                                                 zBottom + pitch * t / (2.0 * M_PI)));
+    }
+    int spline = gmsh::model::occ::addBSpline(pts);
+    int wire = gmsh::model::occ::addWire({ spline });
+
+    double tz = pitch / (2.0 * M_PI);
+    double tn = std::sqrt(helixR * helixR + tz * tz);
+    std::vector<double> zAxis = { 0.0, helixR / tn, tz / tn };   /* helix tangent */
+    std::vector<double> xAxis = { 1.0, 0.0, 0.0 };               /* radial        */
+    int ell = gmsh::model::occ::addEllipse(cx + helixR, cy, zBottom, ellA, ellB, -1,
+                                           0.0, 2.0 * M_PI, zAxis, xAxis);
+    int loop = gmsh::model::occ::addCurveLoop({ ell });
+    int face = gmsh::model::occ::addPlaneSurface({ loop });
+
+    gmsh::vectorpair swept;
+    gmsh::model::occ::addPipe({ {2, face} }, wire, swept, "CorrectedFrenet");
+    for (const auto& dt : swept)
+        if (dt.first == 3) return dt.second;
+    return -1;
+}
+
 } // namespace
 
 bool CsgGmshMesher::cylindricalCavity(double radius, double height, double meshSize,
@@ -170,44 +205,10 @@ bool CsgGmshMesher::spiralInCylindricalCavity(double cavRadius, double cavHeight
 
         int cavity = gmsh::model::occ::addCylinder(0, 0, 0, 0, 0, cavHeight, cavRadius);
 
-        const double z0 = (cavHeight - height) / 2.0;
-        const double totalAngle = turns * 2.0 * M_PI;
-
-        /* Helix spine as an OCC B-spline through sampled points. */
-        const int perTurn = 24;
-        const int nPts = (int)(perTurn * turns) + 1;
-        std::vector<int> pts;
-        pts.reserve(nPts);
-        for (int i = 0; i < nPts; ++i) {
-            double t = totalAngle * (double)i / (double)(nPts - 1);
-            double x = helixR * std::cos(t);
-            double y = helixR * std::sin(t);
-            double z = z0 + pitch * t / (2.0 * M_PI);
-            pts.push_back(gmsh::model::occ::addPoint(x, y, z, meshSize));
-        }
-        int spline = gmsh::model::occ::addBSpline(pts);
-        int wire = gmsh::model::occ::addWire({ spline });
-
-        /* Elliptical profile at the helix start, normal = helix tangent there.
-         * Tangent at t=0 is (0, helixR, pitch/2pi); radial x-axis (1,0,0) lies in
-         * the profile plane. Major semi-axis ellA is radial, minor ellB axial. */
-        double tz = pitch / (2.0 * M_PI);
-        double tn = std::sqrt(helixR * helixR + tz * tz);
-        std::vector<double> zAxis = { 0.0, helixR / tn, tz / tn };  /* = unit tangent */
-        std::vector<double> xAxis = { 1.0, 0.0, 0.0 };
-        int ell = gmsh::model::occ::addEllipse(helixR, 0.0, z0, ellA, ellB, -1,
-                                               0.0, 2.0 * M_PI, zAxis, xAxis);
-        int loop = gmsh::model::occ::addCurveLoop({ ell });
-        int face = gmsh::model::occ::addPlaneSurface({ loop });
-
-        /* Sweep the elliptical face along the helix -> helical elliptical solid. */
-        gmsh::vectorpair swept;
-        gmsh::model::occ::addPipe({ {2, face} }, wire, swept, "CorrectedFrenet");
-        int core = -1;
-        for (const auto& dt : swept)
-            if (dt.first == 3) { core = dt.second; break; }
+        const double z0 = (cavHeight - height) / 2.0;   /* centre the helix vertically */
+        int core = makeHelixSolid(0.0, 0.0, z0, helixR, pitch, turns, ellA, ellB);
         if (core < 0) {
-            if (err) *err = "spiral: pipe sweep did not produce a solid";
+            if (err) *err = "spiral: helical sweep did not produce a solid";
             gmsh::clear(); gmsh::finalize();
             return false;
         }
@@ -217,6 +218,60 @@ bool CsgGmshMesher::spiralInCylindricalCavity(double cavRadius, double cavHeight
         gmsh::model::occ::cut({ {3, cavity} }, { {3, core} }, outDimTags, outDimTagsMap);
         gmsh::model::occ::synchronize();
         applyMeshOptions(meshSize);
+        gmsh::model::mesh::generate(3);
+        bool ok = extractCurrentMesh(out, err);
+        gmsh::clear();
+        gmsh::finalize();
+        return ok;
+    } catch (const std::exception& e) {
+        if (err) *err = std::string("gmsh: ") + e.what();
+        try { gmsh::finalize(); } catch (...) {}
+        return false;
+    }
+}
+
+bool CsgGmshMesher::buildResonator(const ResonatorSpec& s, FemMesh& out, std::string* err)
+{
+    try {
+        gmsh::initialize();
+        gmsh::model::add("resonator");
+
+        /* Cavity, and its centre (core is placed on the cavity axis). */
+        double cx, cy, cz;
+        if (s.cavity == ResonatorSpec::CAVITY_BOX) {
+            gmsh::model::occ::addBox(0, 0, 0, s.cavA, s.cavB, s.cavD);
+            cx = s.cavA / 2; cy = s.cavB / 2; cz = s.cavD / 2;
+        } else {
+            gmsh::model::occ::addCylinder(0, 0, 0, 0, 0, s.cavHeight, s.cavRadius);
+            cx = 0; cy = 0; cz = s.cavHeight / 2;
+        }
+        int cavity = 1;   /* first volume tag */
+
+        /* Optional core, centred on the cavity axis. */
+        int core = -1;
+        if (s.core == ResonatorSpec::CORE_CYLINDER) {
+            core = gmsh::model::occ::addCylinder(cx, cy, cz - s.coreHeight / 2,
+                                                 0, 0, s.coreHeight, s.coreRadius);
+        } else if (s.core == ResonatorSpec::CORE_BOX) {
+            core = gmsh::model::occ::addBox(cx - s.coreA / 2, cy - s.coreB / 2, cz - s.coreD / 2,
+                                            s.coreA, s.coreB, s.coreD);
+        } else if (s.core == ResonatorSpec::CORE_SPIRAL) {
+            core = makeHelixSolid(cx, cy, cz - (s.pitch * s.turns) / 2,
+                                  s.helixR, s.pitch, s.turns, s.ellA, s.ellB);
+            if (core < 0) {
+                if (err) *err = "core: helical sweep did not produce a solid";
+                gmsh::clear(); gmsh::finalize();
+                return false;
+            }
+        }
+
+        if (core >= 0) {
+            gmsh::vectorpair outDimTags;
+            std::vector<gmsh::vectorpair> outDimTagsMap;
+            gmsh::model::occ::cut({ {3, cavity} }, { {3, core} }, outDimTags, outDimTagsMap);
+        }
+        gmsh::model::occ::synchronize();
+        applyMeshOptions(s.meshSize);
         gmsh::model::mesh::generate(3);
         bool ok = extractCurrentMesh(out, err);
         gmsh::clear();

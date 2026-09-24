@@ -4,6 +4,26 @@
 #include <string>
 #include "FemMesh.h"
 
+/* Parametric resonator: a cavity (cylinder or box) with an optional metal core
+ * (concentric cylinder, box, or elliptical-cross-section spiral) subtracted from
+ * it. The core is centred on the cavity axis (z through the cavity centre). */
+struct ResonatorSpec
+{
+    enum Cavity { CAVITY_CYLINDER = 0, CAVITY_BOX = 1 };
+    enum Core   { CORE_NONE = 0, CORE_CYLINDER = 1, CORE_BOX = 2, CORE_SPIRAL = 3 };
+
+    int    cavity   = CAVITY_CYLINDER;
+    double cavRadius = 1.0, cavHeight = 2.0;      /* cylinder cavity            */
+    double cavA = 1.0, cavB = 0.8, cavD = 1.5;    /* box cavity (x,y,z extents) */
+
+    int    core = CORE_NONE;
+    double coreRadius = 0.3, coreHeight = 2.0;    /* cylinder core              */
+    double coreA = 0.3, coreB = 0.3, coreD = 1.0; /* box core (x,y,z extents)   */
+    double helixR = 0.5, pitch = 0.5, turns = 2.0, ellA = 0.12, ellB = 0.12; /* spiral */
+
+    double meshSize = 0.2;
+};
+
 /* Geometry + meshing backend built on Gmsh's OpenCASCADE (occ) kernel.
  *
  * Replaces the original hand-written Delaunay triangulator. Geometry is defined
@@ -45,6 +65,12 @@ public:
                                           double helixR, double pitch, double turns,
                                           double ellA, double ellB, double meshSize,
                                           FemMesh& out, std::string* err = nullptr);
+
+    /* Unified parametric builder: cavity {cyl, box} x core {none, cyl, box,
+     * spiral}. Builds both solids, subtracts the core, meshes the remainder.
+     * This is what the GUI drives. */
+    static bool buildResonator(const ResonatorSpec& spec, FemMesh& out,
+                               std::string* err = nullptr);
 };
 
 #endif // CSGGMSHMESHER_H

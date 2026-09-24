@@ -188,13 +188,23 @@ fundamental is physically consistent.
   nonzero eigenvalues — it tolerates a singular mass matrix via the spectral
   shift and scales to fine meshes. This is the top numerical follow-up.
 
+## Feature completion — done
+
+- **Parametric mesher** `CsgGmshMesher::buildResonator(ResonatorSpec)` covers the
+  full matrix: cavity {cylinder, box} × core {none, cylinder, box, spiral}. All 8
+  combinations mesh successfully. The core is centred on the cavity axis and
+  boolean-cut from the cavity.
+- **Qt GUI** (`MainDialog`, rebuilt): cavity/core dropdowns, per-shape parameter
+  fields, mesh size / #modes / penalty controls, a "Compute modes" button, a
+  resonant-frequency list, and an OpenGL mesh view (green tetrahedra, red PEC
+  nodes). Verified headless under Xvfb + software GL: e.g. the default cylinder
+  computes TM₀₁₀ = 114.38 MHz and renders its mesh. An env-gated self-test
+  (`RESONATOR_AUTORUN`, `RESONATOR_SHOT`) drives compute + screenshot for CI.
+
 ## Next milestones
 
-Numerical core is now solid: sparse shift-invert + grad-div penalty give the
-physical modes directly as the smallest eigenvalues (cavities validated; spiral
-converging). Remaining:
+Numerical core and features are in place. Remaining polish:
 
-3. Feature completion: rectangular core, one parametric `cavity × core` mesher,
-   and wire the selectors into the Qt GUI (offscreen build/run here).
-4. Polish: reduce the spiral gauge residual (better boundary-node handling on
-   curved walls), then contribution hygiene (license, examples, CI).
+- Reduce the spiral gauge residual (better boundary-node handling on curved
+  walls) and run the solve off the UI thread for large meshes.
+- Contribution hygiene: license, example gallery, CI.
