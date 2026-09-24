@@ -59,4 +59,8 @@ Working end to end: geometry → Gmsh/OCC mesh → edge-element FEM → grad-div
 sparse eigensolve → GUI. Cavities validated against analytic modes (cyl −0.3%,
 box −0.5%, coax +0.8%); the spiral fundamental converges to the helical
 quarter-wave estimate. Remaining polish (spiral gauge residual on curved walls,
-off-thread solve, license/CI) is tracked in `docs/RESULTS.md`.
+off-thread solve, CI) is tracked in `docs/RESULTS.md`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
