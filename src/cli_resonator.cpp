@@ -106,16 +106,18 @@ int main(int argc, char** argv)
      * analytic/estimate frequency): isolates physical modes, skips the null
      * space, and scales to fine meshes. */
     double targetK2 = std::pow(2.0 * M_PI * analyticTM010_MHz * 1.0e6 / C_LIGHT, 2.0);
-    double sigmaK2 = 0.9 * targetK2;   /* sit in the gap just below the target mode */
-    if (const char* sigEnv = std::getenv("SIGMA")) sigmaK2 = std::atof(sigEnv);  /* test override */
+    /* Default: grad-div penalty ON — it removes the gradient null space, so the
+     * smallest eigenvalues are the physical modes (no need to know the target).
+     * PENALTY=0 falls back to plain shift-invert near the analytic estimate. */
+    double penFactor = 50.0;
+    if (const char* penEnv = std::getenv("PENALTY")) penFactor = std::atof(penEnv);
+    double sigmaK2;
+    if (penFactor > 0.0) { engine.setGradDivPenalty(penFactor); sigmaK2 = 0.001; }
+    else                 { sigmaK2 = 0.9 * targetK2; }
+    if (const char* sigEnv = std::getenv("SIGMA")) sigmaK2 = std::atof(sigEnv);  /* override */
     engine.setResonatorSolveTarget(sigmaK2, 12);
-    if (const char* penEnv = std::getenv("PENALTY")) {
-        double f = std::atof(penEnv);
-        engine.setGradDivPenalty(f);
-        std::printf("grad-div penalty factor = %g\n", f);
-    }
-    std::printf("shift-invert: target %.1f MHz (k^2=%.4f), shift sigma=%.4f\n",
-                analyticTM010_MHz, targetK2, sigmaK2);
+    std::printf("solve: grad-div penalty factor=%g, shift sigma=%.4f (analytic dominant %.1f MHz)\n",
+                penFactor, sigmaK2, analyticTM010_MHz);
     if (!engine.generateFromMesh(mesh)) {
         std::printf("generateFromMesh FAILED\n");
         return 1;

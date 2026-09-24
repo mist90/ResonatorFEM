@@ -852,6 +852,7 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
      * EDGE_FREE table entries. The solver forms s*(T G) D^-1 (Gᵀ T). */
     std::vector<std::pair<uint32_t, uint32_t> > dofNodes;
     std::vector<double> dofLen;
+    std::vector<char> interiorNode;
     double penaltyS = 0.0;
     if(penaltyFactor > 0.0 && widthGlobalMatrix > 0)
     {
@@ -865,6 +866,13 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
                 dofNodes[dof] = std::make_pair(e.getNode1()->getSerialNumber(), e.getNode2()->getSerialNumber());
                 dofLen[dof] = e.lenEdge();
             }
+        /* Interior-node mask (metal/PEC nodes are the gauge datum -> excluded). */
+        std::list<MicroNode>::iterator itn, itnBegin, itnEnd;
+        interiorNode.assign(grid.getNumNodes(), 1);
+        grid.getIteratorNodes(itnBegin, itnEnd);
+        for(itn = itnBegin; itn != itnEnd; ++itn)
+            if(itn->isFlags(NODE_IS_METALL))
+                interiorNode[itn->getSerialNumber()] = 0;
         double meanDiag = 0.0;
         for(uint32_t d = 0; d < widthGlobalMatrix; d++) meanDiag += globalMatrixT.element(d, d);
         meanDiag /= (double)widthGlobalMatrix;
@@ -881,7 +889,7 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     bool solved;
     if(penaltyS > 0.0)
         solved = MathEighValVectorShiftInvertGauged(globalMatrixT, globalMatrixR, dofNodes, dofLen,
-                     grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
+                     interiorNode, grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
                      solveNev, eighValue, rootsGlobalMatrix);
     else if(solveSigmaK2 >= 0.0)
         solved = MathEighValVectorShiftInvert(globalMatrixT, globalMatrixR, solveSigmaK2, solveNev, eighValue, rootsGlobalMatrix);

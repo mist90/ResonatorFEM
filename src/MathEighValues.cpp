@@ -170,6 +170,7 @@ bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixS
 bool MathEighValVectorShiftInvertGauged(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
                                         const std::vector<std::pair<uint32_t, uint32_t> >& dofNodes,
                                         const std::vector<double>& dofLen,
+                                        const std::vector<char>& interiorNode,
                                         uint32_t nNodes, double penaltyS, double sigma, int nev,
                                         std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
@@ -178,32 +179,36 @@ bool MathEighValVectorShiftInvertGauged(MathMatrixSparse<double>& matrixA, MathM
     if(matrixA.width() != matrixB.width())  return false;
     const int n = (int)matrixA.width();
     if(n <= 2 || (int)dofNodes.size() != n || (int)dofLen.size() != n || nNodes == 0) return false;
+    if((uint32_t)interiorNode.size() != nNodes) return false;
 
     Eigen::SparseMatrix<double> Ae = toEigen(matrixA, n);   /* stiffness S */
     Eigen::SparseMatrix<double> Be = toEigen(matrixB, n);   /* mass T      */
 
-    /* Discrete gradient G (n edges x nNodes): edge d = (tail a, head b), scaled
-     * by edge length for this len*Whitney basis.
-     *
-     * EXPERIMENTAL / WIP: the exact discrete gradient of this hand-rolled,
-     * length-scaled edge basis is not yet fully identified — empirically the
-     * residual ||S*G||/||S|| bottoms out around 0.15 (not ~0), so G is not quite
-     * in the null space of S and the penalty still perturbs the physical modes.
-     * Consequently the grad-div penalty is OFF by default (penaltyFactor = 0);
-     * getting the null-space projection exact is a focused follow-up. The
-     * *formulation* below is correct given a correct G: P = (T G) D^-1 (Gᵀ T) is
-     * zero on physical modes (Gᵀ T e = 0) and lifts the gradient modes. */
+    /* Discrete gradient G (n edges x nNodes). For this len*Whitney basis the DOF
+     * coefficient of grad(phi) on edge (tail a -> head b) is (phi_b - phi_a)/len,
+     * so entries are -/+ 1/len. Crucially, only INTERIOR nodes are columns: the
+     * valid gauge freedom is phi varying on interior nodes and constant on each
+     * PEC conductor. The gradient of a boundary-node scalar leaks onto the
+     * excluded PEC edges and is NOT a null vector of the reduced stiffness, so
+     * including boundary-node columns spoils G (this was the key fix). With the
+     * interior-only restriction G is (essentially) the null space of S, so the
+     * penalty preserves the physical modes and lifts only the gradient modes. */
     std::vector<Eigen::Triplet<double> > gtrip;
     gtrip.reserve((std::size_t)n * 2);
     for(int d = 0; d < n; d++) {
         uint32_t a = dofNodes[d].first, b = dofNodes[d].second;
         if(a == UINT32_MAX || dofLen[d] <= 0.0) continue;
-        double w = dofLen[d];
-        gtrip.emplace_back(d, (int)a, -w);
-        gtrip.emplace_back(d, (int)b, +w);
+        double w = 1.0 / dofLen[d];
+        if(interiorNode[a]) gtrip.emplace_back(d, (int)a, -w);
+        if(interiorNode[b]) gtrip.emplace_back(d, (int)b, +w);
     }
     Eigen::SparseMatrix<double> G((int)n, (int)nNodes);
     G.setFromTriplets(gtrip.begin(), gtrip.end());
+    /* Gauge-quality report: ||S*G||/||S|| should be ~0 (G in null(S)). It is
+     * ~0.01-0.07 for cavities; larger on coarse meshes of complex curved
+     * boundaries (e.g. the spiral) and shrinks under refinement. */
+    { Eigen::SparseMatrix<double> SG = Ae * G;
+      std::fprintf(stderr, "gauge: ||S*G||/||S|| = %.3e\n", SG.norm() / (Ae.norm() + 1e-30)); }
 
     /* Mass-metric grad-div penalty: P = (T G) D^-1 (G^T T), D = diag(G^T T G).
      * P e = 0 for physical modes (G^T T e = 0), so they are preserved exactly;

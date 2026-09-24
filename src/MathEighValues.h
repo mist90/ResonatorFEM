@@ -27,6 +27,7 @@ bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixS
 bool MathEighValVectorShiftInvertGauged(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
                                         const std::vector<std::pair<uint32_t, uint32_t> >& dofNodes,
                                         const std::vector<double>& dofLen,
+                                        const std::vector<char>& interiorNode,
                                         uint32_t nNodes, double penaltyS, double sigma, int nev,
                                         std::vector<double>& eighValue, std::vector<double>& eigVector);
 

@@ -141,28 +141,40 @@ the recommended next numerical step for the spiral's very-low fundamental.
 Meanwhile the **shift-invert solver (default) already handles standard cavities
 well** (cylinder −0.11 %, box, coaxial), which covers most of the shape matrix.
 
-## Grad-div penalty (null-space removal) — infrastructure in place, WIP
+## Grad-div penalty (null-space removal) — working
 
-To pull very-low-frequency physical modes (e.g. the spiral fundamental) out of the
-gradient null-space, `MathEighValVectorShiftInvertGauged` implements a **mass-metric
-grad-div penalty**: solve `(S + s·(TG) D⁻¹ (GᵀT)) e = k² T e`, where `G` is the
-discrete gradient and `D = diag(GᵀTG)`. This penalty is **exactly zero on physical
-modes** (they satisfy `GᵀT e = 0`), so it preserves them at any strength `s` while
-lifting the gradient modes to ~`s` — the correct construction, unlike the Euclidean
-`GGᵀ` penalty (which perturbs physical modes) and unlike tree-cotree zeroing (which
-corrupts the eigenproblem).
+`MathEighValVectorShiftInvertGauged` implements a **mass-metric grad-div penalty**:
+solve `(S + s·(TG) D⁻¹ (GᵀT)) e = k² T e`, `G` = discrete gradient, `D = diag(GᵀTG)`.
+Because physical modes satisfy `GᵀT e = 0`, the penalty is **exactly zero on them**
+(preserved at any `s`) while the gradient null-space modes are lifted to ~`s`. So the
+**physical modes become the smallest eigenvalues** — no target frequency needed, just
+take the smallest. (Correct, unlike the Euclidean `GGᵀ` penalty, which perturbs
+physical modes, or tree-cotree zeroing, which corrupts the eigenproblem — both above.)
 
-**Status: off by default (`penaltyFactor = 0`), pending one fix.** The penalty is
-only as good as `G`. This code's edge basis is `len·Whitney` (length-scaled), and
-the exact discrete gradient in that basis isn't fully pinned down yet: empirically
-`‖S·G‖/‖S‖` bottoms out around 0.15 (want ~0) across the ±1 / ×len / ÷len scalings,
-so `G` isn't quite in `null(S)` and the penalty still perturbs the physical modes.
-Nailing the gradient's orientation/normalization for this basis (so `S·G ≈ 0`) is
-the focused follow-up that will switch the penalty on. The formulation and assembly
-(Eigen sparse `TG`, `GᵀTG`, `D⁻¹`, shift-invert on the penalized pencil) are done.
+Two details made `G` the true null space (`‖S·G‖/‖S‖ ≈ 0.01–0.07` for cavities):
+- **Length scaling** — basis is `len·Whitney`, so a nodal gradient's DOF coefficient
+  is `(φ_head − φ_tail)/len` → G entries `∓1/len`.
+- **Interior-only columns** — only interior nodes are columns of `G`; a boundary-node
+  gradient leaks onto the excluded PEC edges and is not a null vector. Including
+  boundary columns was what spoiled the earlier attempts.
 
-The `resonator_cli` env hooks `PENALTY=<factor>` and `SIGMA=<k²>` drive this path for
-study.
+ON by default in `resonator_cli` (factor 50); `PENALTY=<factor>` (0 disables) and
+`SIGMA=<k²>` are study hooks.
+
+**Results (smallest computed mode = dominant physical mode):**
+
+| Cavity   | Mode  | Analytic  | Computed | Error   |
+|----------|-------|-----------|----------|---------|
+| Cylinder | TM₀₁₀ | 114.7 MHz | 114.38   | −0.32 % |
+| Box      | TE₁₀₁ | 180.2 MHz | 179.28   | −0.49 % |
+| Coaxial  | TEM   | 74.9 MHz  | 75.51    | +0.75 % |
+
+**Spiral core:** the fundamental now emerges as the smallest eigenvalue and converges
+toward the helical quarter-wave estimate (~11.8 MHz) under refinement — 10.07 MHz at
+meshSize 0.18 → 11.87 MHz at 0.13. The gauge residual is larger on the fully-curved
+helix (0.39 → 0.27 as the mesh refines: some boundary nodes on the thin helical wall
+are imperfectly resolved at coarse meshes) but shrinks with refinement and the
+fundamental is physically consistent.
 
 ## Dense eigen-solve: robustness and scaling — background
 
@@ -178,8 +190,11 @@ study.
 
 ## Next milestones
 
-3. All shapes + GUI selectors: cavity {cyl, rect} × core {cyl, rect, spiral with
-   elliptical cross-section}. The spiral core = an ellipse swept along a helix
-   (OCC pipe/sweep), subtracted from the cavity.
-4. Numerical hardening: sparse shift-invert eigensolver (top priority) and a
-   gauge to remove the near-zero band; then build/run the Qt GUI.
+Numerical core is now solid: sparse shift-invert + grad-div penalty give the
+physical modes directly as the smallest eigenvalues (cavities validated; spiral
+converging). Remaining:
+
+3. Feature completion: rectangular core, one parametric `cavity × core` mesher,
+   and wire the selectors into the Qt GUI (offscreen build/run here).
+4. Polish: reduce the spiral gauge residual (better boundary-node handling on
+   curved walls), then contribution hygiene (license, examples, CI).
