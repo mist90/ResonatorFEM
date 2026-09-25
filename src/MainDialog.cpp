@@ -10,6 +10,8 @@
 #include <QFileDialog>
 #include <QListWidgetItem>
 #include <QTimer>
+#include <QtConcurrent>
+#include <QFuture>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
@@ -37,6 +39,10 @@ MainDialog::MainDialog()
     setWindowTitle("ResonatorFEM");
     view   = new ResonatorView();
     engine = new MicroEngine();
+
+    worker = new QFutureWatcher<PipelineResult>(this);
+    solveAfterMesh = false;
+    autoRunPending = false;
 
     cavityCombo = new QComboBox();
     cavityCombo->addItems({ "Cylinder", "Rectangular (box)" });
@@ -141,6 +147,12 @@ MainDialog::MainDialog()
     connect(meshCheck,   SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(mesh3dCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(resultsList, SIGNAL(currentRowChanged(int)), this, SLOT(modeSelected(int)));
+    connect(worker, SIGNAL(finished()), this, SLOT(workerFinished()));
+    /* Engine progress (emitted from the worker thread, delivered here queued). */
+    connect(engine, &MicroEngine::startCreateMatrix, this,
+            [this]{ log("Assembling matrices..."); });
+    connect(engine, &MicroEngine::startSolveMatrix, this,
+            [this]{ log("Solving eigenproblem..."); });
 
     cavityChanged();
     coreChanged();
@@ -202,25 +214,36 @@ void MainDialog::layerToggled()
     view->setLayerVisible(ResonatorView::MESH3D, mesh3dCheck->isChecked());
 }
 
+/* Enable/disable the controls that mutate the shared engine/mesh while a
+ * background job is running, so nothing races the worker thread. */
+void MainDialog::setBusy(bool busy)
+{
+    buildMeshButton->setEnabled(!busy);
+    computeButton->setEnabled(!busy);
+    resultsList->setEnabled(!busy);
+}
+
 void MainDialog::buildMeshSlot()
 {
-    buildMeshButton->setEnabled(false);
+    setBusy(true);
     resultsList->clear();
     view->clearField();
     ResonatorSpec spec = readSpec();
+    log("Meshing (Gmsh/OpenCASCADE)... (background)");
 
-    log("Meshing (Gmsh/OpenCASCADE)...");
-    std::string err;
-    if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
-        log("Mesh FAILED: " + QString::fromStdString(err));
-        buildMeshButton->setEnabled(true);
-        return;
-    }
-    log(QString("Mesh: %1 nodes, %2 tets").arg(mesh.nodes.size()).arg(mesh.tets.size()));
-    view->setMesh(mesh);
-    layerToggled();
-    log("Mesh built — press Compute modes to solve.");
-    buildMeshButton->setEnabled(true);
+    solveAfterMesh = false;
+    worker->setFuture(QtConcurrent::run([this, spec]() {
+        PipelineResult r;
+        std::string err;
+        if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
+            r.err = "Mesh FAILED: " + QString::fromStdString(err);
+            return r;
+        }
+        r.ok = true;
+        r.nodes = mesh.nodes.size();
+        r.tets  = mesh.tets.size();
+        return r;
+    }));
 }
 
 void MainDialog::showModeField(int internalIndex)
@@ -241,53 +264,72 @@ void MainDialog::modeSelected(int row)
 
 void MainDialog::computeSlot()
 {
-    computeButton->setEnabled(false);
+    setBusy(true);
     resultsList->clear();
+    view->clearField();
     ResonatorSpec spec = readSpec();
+    double penalty = penaltyEdit->text().toDouble();
+    int    nModes  = numModesEdit->text().toInt();
+    log("Meshing (Gmsh/OpenCASCADE)... (background)");
 
-    log("Meshing (Gmsh/OpenCASCADE)...");
-    std::string err;
-    if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
-        log("Mesh FAILED: " + QString::fromStdString(err));
-        computeButton->setEnabled(true);
+    solveAfterMesh = true;
+    worker->setFuture(QtConcurrent::run([this, spec, penalty, nModes]() {
+        PipelineResult r;
+        std::string err;
+        if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
+            r.err = "Mesh FAILED: " + QString::fromStdString(err);
+            return r;
+        }
+        r.nodes = mesh.nodes.size();
+        r.tets  = mesh.tets.size();
+        engine->setResonatorMode(true);
+        engine->setGradDivPenalty(penalty);
+        engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
+        if (!engine->generateFromMesh(mesh)) { r.err = "generateFromMesh failed"; return r; }
+        if (!engine->calculateSync())        { r.err = "Solve FAILED";          return r; }
+        engine->getEighValues(r.k2);
+        r.ok = true;
+        r.solved = true;
+        return r;
+    }));
+}
+
+/* GUI-thread continuation once the background mesh(+solve) pipeline completes. */
+void MainDialog::workerFinished()
+{
+    PipelineResult r = worker->result();
+
+    if (!r.ok) {
+        log(r.err);
+        setBusy(false);
+        if (autoRunPending) { autoRunPending = false; finishAutoRun(); }
         return;
     }
-    log(QString("Mesh: %1 nodes, %2 tets").arg(mesh.nodes.size()).arg(mesh.tets.size()));
+
+    log(QString("Mesh: %1 nodes, %2 tets").arg(r.nodes).arg(r.tets));
     view->setMesh(mesh);
     layerToggled();
 
-    engine->setResonatorMode(true);
-    engine->setGradDivPenalty(penaltyEdit->text().toDouble());
-    int nModes = numModesEdit->text().toInt();
-    engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
-    if (!engine->generateFromMesh(mesh)) {
-        log("generateFromMesh failed");
-        computeButton->setEnabled(true);
-        return;
-    }
-    log("Solving eigenproblem...");
-    if (!engine->calculateSync()) {
-        log("Solve FAILED");
-        computeButton->setEnabled(true);
-        return;
+    if (r.solved) {
+        std::vector<std::pair<double, int> > modes;
+        for (int i = 0; i < (int)r.k2.size(); ++i) modes.push_back(std::make_pair(r.k2[i], i));
+        std::sort(modes.begin(), modes.end());
+        for (const auto& m : modes) {
+            if (m.first <= 0.0) continue;
+            double f = C_LIGHT * std::sqrt(m.first) / (2.0 * M_PI) / 1.0e6;
+            QListWidgetItem* it = new QListWidgetItem(
+                QString("%1 MHz   (k^2 = %2)").arg(f, 0, 'f', 3).arg(m.first, 0, 'f', 5));
+            it->setData(Qt::UserRole, m.second);   /* internal mode index for basis reconstruction */
+            resultsList->addItem(it);
+        }
+        if (resultsList->count() > 0) resultsList->setCurrentRow(0);   /* show fundamental field */
+        log("Done.");
+    } else {
+        log("Mesh built — press Compute modes to solve.");
     }
 
-    std::vector<double> k2;
-    engine->getEighValues(k2);
-    std::vector<std::pair<double, int> > modes;
-    for (int i = 0; i < (int)k2.size(); ++i) modes.push_back(std::make_pair(k2[i], i));
-    std::sort(modes.begin(), modes.end());
-    for (const auto& m : modes) {
-        if (m.first <= 0.0) continue;
-        double f = C_LIGHT * std::sqrt(m.first) / (2.0 * M_PI) / 1.0e6;
-        QListWidgetItem* it = new QListWidgetItem(
-            QString("%1 MHz   (k^2 = %2)").arg(f, 0, 'f', 3).arg(m.first, 0, 'f', 5));
-        it->setData(Qt::UserRole, m.second);   /* internal mode index for basis reconstruction */
-        resultsList->addItem(it);
-    }
-    if (resultsList->count() > 0) resultsList->setCurrentRow(0);   /* show fundamental field */
-    log("Done.");
-    computeButton->setEnabled(true);
+    setBusy(false);
+    if (autoRunPending) { autoRunPending = false; finishAutoRun(); }
 }
 
 void MainDialog::saveImageSlot()
@@ -300,12 +342,17 @@ void MainDialog::autoRun()
 {
     if (const char* c = std::getenv("RESONATOR_CAV"))  cavityCombo->setCurrentIndex(std::atoi(c));
     if (const char* c = std::getenv("RESONATOR_CORE")) coreCombo->setCurrentIndex(std::atoi(c));
-    computeSlot();
     if (std::getenv("RESONATOR_MESH3D")) {   /* test: show only the 3D mesh layer */
         solidsCheck->setChecked(false);
         fieldsCheck->setChecked(false);
         mesh3dCheck->setChecked(true);
     }
+    autoRunPending = true;   /* finishAutoRun() runs when the background compute completes */
+    computeSlot();
+}
+
+void MainDialog::finishAutoRun()
+{
     if (const char* shot = std::getenv("RESONATOR_SHOT")) {
         view->grabFramebuffer().save(QString(shot));
         this->grab().save(QString(shot) + ".ui.png");   /* full window (controls) */

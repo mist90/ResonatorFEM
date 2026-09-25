@@ -12,11 +12,25 @@
 #include <QListWidget>
 #include <QTextEdit>
 #include <QGroupBox>
+#include <QFutureWatcher>
+#include <vector>
+
+/* Result of the background mesh(+solve) pipeline handed back to the GUI thread. */
+struct PipelineResult
+{
+    bool                ok = false;
+    QString             err;
+    size_t              nodes = 0;
+    size_t              tets = 0;
+    bool                solved = false;   /* true if the eigen-solve ran */
+    std::vector<double> k2;               /* eigenvalues, when solved */
+};
 
 /* Parametric resonator GUI: choose cavity (cylinder/box) and core (none/cylinder/
  * box/spiral with elliptical cross-section), mesh with Gmsh/OpenCASCADE, solve the
  * edge-element eigenproblem, and list the resonant frequencies. A VTK view shows
- * three toggleable layers: solids, fields, mesh. */
+ * three toggleable layers: solids, fields, mesh. Meshing and solving run on a
+ * background thread so the GUI stays responsive. */
 class MainDialog : public QDialog
 {
     Q_OBJECT
@@ -45,10 +59,18 @@ private:
     ResonatorSpec readSpec();
     void          log(const QString& s);
     void          showModeField(int internalIndex);
+    void          setBusy(bool busy);
+    void          finishAutoRun();   /* screenshot + print + quit, after async compute */
+
+    /* Background pipeline (runs off the GUI thread). */
+    QFutureWatcher<PipelineResult> *worker;
+    bool                            solveAfterMesh;   /* current job: mesh-only vs mesh+solve */
+    bool                            autoRunPending;   /* finish the headless self-test on completion */
 
 private slots:
     void buildMeshSlot();
     void computeSlot();
+    void workerFinished();   /* GUI-thread handler for pipeline results */
     void cavityChanged();
     void coreChanged();
     void layerToggled();

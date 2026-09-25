@@ -8,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt5 REQUIRED COMPONENTS Core Widgets Concurrent)
 
 # --- external libraries -----------------------------------------------------
 # Geometry+meshing via Gmsh (OpenCASCADE kernel); eigen-solve via LAPACK (dense)
@@ -56,5 +56,5 @@ add_executable(ResonatorFEM
   src/MainDialog.cpp
   src/ResonatorView.cpp
 )
-target_link_libraries(ResonatorFEM PRIVATE resonator_core Qt5::Widgets ${VTK_LIBRARIES})
+target_link_libraries(ResonatorFEM PRIVATE resonator_core Qt5::Widgets Qt5::Concurrent ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS ResonatorFEM MODULES ${VTK_LIBRARIES})

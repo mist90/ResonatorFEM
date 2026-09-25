@@ -92,16 +92,17 @@ void ResonatorView::setMesh(const FemMesh& mesh)
     meshActor->SetVisibility(false);   /* mesh layer off by default */
     renderer->AddActor(meshActor);
 
-    /* 3D mesh: shaded exterior surface with visible cell edges (solid look). */
-    vtkSmartPointer<vtkDataSetMapper> m3 = vtkSmartPointer<vtkDataSetMapper>::New();
-    m3->SetInputData(ug);
+    /* 3D mesh: exterior surface triangulation drawn as edges only — no filled
+     * faces, so it reads as a transparent net you can see through (distinct from
+     * the MESH layer, which is the full volumetric wireframe incl. interior edges). */
+    vtkSmartPointer<vtkPolyDataMapper> m3 = vtkSmartPointer<vtkPolyDataMapper>::New();
+    m3->SetInputConnection(geo->GetOutputPort());
     m3->ScalarVisibilityOff();
     mesh3dActor = vtkSmartPointer<vtkActor>::New();
     mesh3dActor->SetMapper(m3);
-    mesh3dActor->GetProperty()->SetRepresentationToSurface();
-    mesh3dActor->GetProperty()->EdgeVisibilityOn();
-    mesh3dActor->GetProperty()->SetColor(0.80, 0.82, 0.86);
-    mesh3dActor->GetProperty()->SetEdgeColor(0.20, 0.30, 0.20);
+    mesh3dActor->GetProperty()->SetRepresentationToWireframe();
+    mesh3dActor->GetProperty()->SetColor(0.20, 0.30, 0.20);
+    mesh3dActor->GetProperty()->SetLineWidth(0.5);
     mesh3dActor->SetVisibility(false);   /* off by default */
     renderer->AddActor(mesh3dActor);
 
