@@ -194,12 +194,18 @@ fundamental is physically consistent.
   full matrix: cavity {cylinder, box} × core {none, cylinder, box, spiral}. All 8
   combinations mesh successfully. The core is centred on the cavity axis and
   boolean-cut from the cavity.
-- **Qt GUI** (`MainDialog`, rebuilt): cavity/core dropdowns, per-shape parameter
-  fields, mesh size / #modes / penalty controls, a "Compute modes" button, a
-  resonant-frequency list, and an OpenGL mesh view (green tetrahedra, red PEC
-  nodes). Verified headless under Xvfb + software GL: e.g. the default cylinder
-  computes TM₀₁₀ = 114.38 MHz and renders its mesh. An env-gated self-test
-  (`RESONATOR_AUTORUN`, `RESONATOR_SHOT`) drives compute + screenshot for CI.
+- **Qt + VTK GUI** (`MainDialog` + `ResonatorView`): cavity/core dropdowns,
+  per-shape parameter fields, mesh size / #modes / penalty controls, a "Compute
+  modes" button, and a resonant-frequency list. The hand-rolled `MathGrapher`
+  (legacy fixed-function OpenGL) was removed; the engine is now graphics-free
+  (`sampleFieldAtCentroids` feeds the view). The **VTK** view (VTK 9,
+  `QVTKOpenGLNativeWidget`) has three toggleable layers — **solids** (exterior
+  PEC surface, semi-transparent; default on), **fields** (mode field as arrow
+  glyphs coloured by magnitude + scalar bar; default on; click a frequency to
+  switch modes), **mesh** (tet wireframe; default off). Verified headless under
+  Xvfb + software GL: the default cylinder renders TM₀₁₀ with its correct
+  on-axis field peak. Env-gated self-test (`RESONATOR_AUTORUN`,
+  `RESONATOR_SHOT`) drives compute + screenshot for CI.
 
 ## Next milestones
 

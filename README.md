@@ -19,8 +19,8 @@ hand-written Delaunay mesher is replaced here by conforming CSG-based meshes.
 ## Build
 
 Requires a C++17 compiler, CMake, and: `libgmsh-dev`, `liblapack-dev`,
-`libblas-dev`, `libeigen3-dev`, `libspectra-dev`, `qtbase5-dev`,
-`libqt5opengl5-dev`.
+`libblas-dev`, `libeigen3-dev`, `libspectra-dev`, `qtbase5-dev`, `libvtk9-dev`,
+`libvtk9-qt-dev` (VTK also pulls in `libopenmpi-dev`).
 
 ```sh
 cmake -S . -B build -G Ninja
@@ -47,11 +47,16 @@ results, numerical findings, and known limitations).
 
 ## GUI
 
-`ResonatorFEM` is a Qt/OpenGL app: pick the cavity and core shapes from dropdowns,
-set the parameters, click **Compute modes**, and read the resonant frequencies
-while the mesh renders in the 3D view. The parametric backend
-(`CsgGmshMesher::buildResonator`) covers cavity {cylinder, box} × core {none,
-cylinder, box, spiral}.
+`ResonatorFEM` is a Qt + **VTK** app: pick the cavity and core shapes from
+dropdowns, set the parameters, click **Compute modes**, and read the resonant
+frequencies. The parametric backend (`CsgGmshMesher::buildResonator`) covers
+cavity {cylinder, box} × core {none, cylinder, box, spiral}.
+
+The VTK view has three independently toggleable layers (checkboxes):
+- **Solids** — the geometry (semi-transparent PEC surface), *on* by default;
+- **Fields** — the selected mode's field as arrow glyphs coloured by magnitude
+  with a scalar bar, *on* by default (click a frequency to switch modes);
+- **Mesh** — the tetrahedral wireframe, *off* by default.
 
 ## Status
 

@@ -1,25 +1,14 @@
 #include <QApplication>
-#include <QTextCodec>
-#include <QtGlobal>
+#include <QSurfaceFormat>
+#include <QVTKOpenGLNativeWidget.h>
 #include "MainDialog.h"
-
 
 int main(int argc, char** argv)
 {
+    /* Must be set before the QApplication for QVTKOpenGLNativeWidget. */
+    QSurfaceFormat::setDefaultFormat(QVTKOpenGLNativeWidget::defaultFormat());
     QApplication app(argc, argv);
-    MainDialog *dialog;
-
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
-#else
-    QTextCodec::setCodecForCStrings(QTextCodec::codecForName("UTF-8"));
-    QTextCodec::setCodecForTr(QTextCodec::codecForName("UTF-8"));
-#endif
-    QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
-    dialog = new MainDialog();
-    dialog->show();
+    MainDialog dialog;
+    dialog.show();
     return app.exec();
 }
-
-
-
-//EOF

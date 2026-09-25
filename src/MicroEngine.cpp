@@ -60,29 +60,6 @@ MicroEngine::MicroEngine()
 {
     grid.setBeginPoint(MathPoint3D(0.0, 0.0, 0.0));
     grid.setSizeGrid(10.0, 10.0, 10.0);
-    _grapher = 0;
-    pointGenerate = false;
-    waveNumber = 1.0;
-    indexMainSurface = 0;
-    numAction = 0;
-    resonatorModeEnabled = false;
-    widthGlobalMatrix = 0;
-    solveSigmaK2 = -1.0;
-    solveNev = 20;
-    /* Tree-cotree gauging is OFF by default: zeroing tree DOFs is valid for the
-     * driven (source) problem but corrupts the generalized eigenproblem (it
-     * restricts the trial space to e_tree=0, which the physical modes do not
-     * inhabit). Correct null-space removal needs a mass-metric projection /
-     * grad-div penalty (see docs/RESULTS.md). Kept behind a flag for study. */
-    useGauge = false;
-    penaltyFactor = 0.0;
-}
-
-MicroEngine::MicroEngine(MathGrapher &grapher)
-{
-    grid.setBeginPoint(MathPoint3D(0.0, 0.0, 0.0));
-    grid.setSizeGrid(10.0, 10.0, 10.0);
-    _grapher = &grapher;
     pointGenerate = false;
     waveNumber = 1.0;
     indexMainSurface = 0;
@@ -305,60 +282,6 @@ void MicroEngine::addObject(const MathObject &object, bool solid, const double &
     pointGenerate = false;
 }
 
-bool MicroEngine::drawObject(uint32_t index, QColor color)
-{
-    ListMicroTetraedr::iterator it, itBegin, itEnd;
-
-    if(_grapher == 0 || index >= objects.size() || !pointGenerate) return false;
-    grid.getIteratorTetraedrs(itBegin, itEnd);
-    for(it = itBegin; it != itEnd; it++)
-        if(objects[index].isPointInFigure(it->nodes(0)->point()) &&
-                objects[index].isPointInFigure(it->nodes(1)->point()) &&
-                objects[index].isPointInFigure(it->nodes(2)->point()) &&
-                objects[index].isPointInFigure(it->nodes(3)->point()))
-            _grapher->addTetraedrs(it->nodes(0)->point(), it->nodes(1)->point(), it->nodes(2)->point(), it->nodes(3)->point(), color);
-    return true;
-}
-
-bool MicroEngine::drawAllObject()
-{
-    ListMicroTetraedr::iterator it, itBegin, itEnd;
-    MicroEdge edge;
-    std::vector<MicroEdge> drawEdges;
-    uint32_t i, j, k;
-    bool isDraw;
-
-    if(_grapher == 0 || !pointGenerate) return false;
-
-    emit startDrawObjects();
-    grid.drawPoints(*_grapher, NODE_IS_METALL);     /* отрисовка точек */
-    grid.drawTetraedrs(*_grapher);                  /* отрисовка тетраэдров */
-    /* отрисовка ребер */
-    grid.getIteratorTetraedrs(itBegin, itEnd);
-    for(it=itBegin; it!=itEnd; it++)
-        for(i=0; i<4; i++)
-            for(j=0; j<3; j++)
-            {
-                edge = MicroEdge(it->nodes(i + j), it->nodes(i + (j + 1)%3));
-                isDraw = false;
-                for(k=0; k<drawEdges.size(); k++)
-                    if(drawEdges[k] == edge)
-                    {
-                        isDraw = true;
-                        break;
-                    }
-                if(!isDraw)
-                {
-                    if(isMetallEdge(edge))
-                        _grapher->addLine(edge.getNode1()->point(), edge.getNode2()->point(), Qt::red);
-                    else
-                        _grapher->addLine(edge.getNode1()->point(), edge.getNode2()->point(), Qt::green);
-                    drawEdges.push_back(edge);
-                }
-            }
-    return true;
-}
-
 bool MicroEngine::setMainSurface(uint32_t index)
 {
     if(index >= objects.size()) return false;
@@ -430,6 +353,33 @@ MathVector3D MicroEngine::getField(const MathPoint3D &point, const double &phase
     }
     if(outAmpl) *outAmpl = maxVectorField.lenght();
     return vectorField;
+}
+
+bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &points,
+                                         std::vector<std::array<double, 3> > &vectors)
+{
+    ListMicroTetraedr::iterator it, itBegin, itEnd;
+    uint32_t i;
+
+    points.clear();
+    vectors.clear();
+    if(!basisKoef.size()) return false;
+    grid.getIteratorTetraedrs(itBegin, itEnd);
+    for(it = itBegin; it != itEnd; ++it)
+    {
+        MathPoint3D c((it->nodes(0)->point().getX() + it->nodes(1)->point().getX() +
+                       it->nodes(2)->point().getX() + it->nodes(3)->point().getX()) / 4.0,
+                      (it->nodes(0)->point().getY() + it->nodes(1)->point().getY() +
+                       it->nodes(2)->point().getY() + it->nodes(3)->point().getY()) / 4.0,
+                      (it->nodes(0)->point().getZ() + it->nodes(1)->point().getZ() +
+                       it->nodes(2)->point().getZ() + it->nodes(3)->point().getZ()) / 4.0);
+        MathVector3D f(0.0, 0.0, 0.0, c);
+        for(i = 0; i < 6; i++)
+            f = f + it->getValueBasisFunc(c, i) * basisKoef[6 * it->getSerialNumber() + i].re();
+        points.push_back({ c.getX(), c.getY(), c.getZ() });
+        vectors.push_back({ f.getX(), f.getY(), f.getZ() });
+    }
+    return true;
 }
 
 void MicroEngine::clear()

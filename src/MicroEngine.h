@@ -1,12 +1,11 @@
 #ifndef MICROENGINE_H
 #define MICROENGINE_H
 #include <vector>
+#include <array>
 #include <set>
 #include <QThread>
-#include <QMessageBox>
 #include "MicroGrid.h"
 #include "MicroNode.h"
-#include "MathGrapher.h"
 #include "MathObject.h"
 #include "MicroPort.h"
 #include "MathMatrix.h"
@@ -41,8 +40,7 @@ class MicroEngine:public QThread
 {
     Q_OBJECT
 public:
-    MicroEngine();                          /* headless (no grapher) */
-    MicroEngine(MathGrapher& grapher);
+    MicroEngine();
     ~MicroEngine();
     /* Mesh-driven resonator path (replaces genPoints for externally meshed
      * geometry). generateFromMesh loads a conforming tet mesh and flags PEC
@@ -77,8 +75,6 @@ public:
     void            setResonatorMode(bool enable);
     bool            getEighValues(std::vector<double>& eighValues);
     void            addObject(const MathObject& object, bool solid, const double& sigma, const double& epsilon);
-    bool            drawObject(uint32_t index, QColor color);
-    bool            drawAllObject();
     bool            setMainSurface(uint32_t index);
     void            addPort(const MicroPort& port);
     bool            genPoints();            /* генерация точек */
@@ -87,6 +83,11 @@ public:
     bool            isGenerate();
     bool            isCalculate();
     MathVector3D    getField(const MathPoint3D& point, const double& phase, double* outAmpl = 0);
+    /* Sample the current mode's real field vector at every tetrahedron centroid
+     * (call calculateBasisKoef first to pick the mode). One pass, no point
+     * search — for the field-glyph visualization. */
+    bool            sampleFieldAtCentroids(std::vector<std::array<double, 3> >& points,
+                                           std::vector<std::array<double, 3> >& vectors);
     void            clear();
 signals:
     void            startObjectsGenerate();
@@ -130,7 +131,6 @@ private:
     bool            resonatorModeEnabled;
     uint32_t        numAction;
     MicroGrid       grid;
-    MathGrapher     *_grapher;
     uint32_t        indexMainSurface;
     /* Для резонансной задачи */
     std::vector<GlobalTableElement> globalTable;

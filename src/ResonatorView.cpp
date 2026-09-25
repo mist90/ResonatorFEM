@@ -1,0 +1,174 @@
+#include "ResonatorView.h"
+
+#include <vtkGenericOpenGLRenderWindow.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkPoints.h>
+#include <vtkTetra.h>
+#include <vtkCellType.h>
+#include <vtkGeometryFilter.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkDataSetMapper.h>
+#include <vtkProperty.h>
+#include <vtkPointData.h>
+#include <vtkDoubleArray.h>
+#include <vtkArrowSource.h>
+#include <vtkGlyph3D.h>
+#include <vtkLookupTable.h>
+#include <cmath>
+
+ResonatorView::ResonatorView(QWidget* parent)
+    : QVTKOpenGLNativeWidget(parent), modelDiagonal(1.0)
+{
+    vtkSmartPointer<vtkGenericOpenGLRenderWindow> renWin =
+        vtkSmartPointer<vtkGenericOpenGLRenderWindow>::New();
+    setRenderWindow(renWin);
+
+    renderer = vtkSmartPointer<vtkRenderer>::New();
+    renderer->SetBackground(1.0, 1.0, 1.0);
+    renderer->SetBackground2(0.88, 0.90, 0.96);
+    renderer->GradientBackgroundOn();
+    renWin->AddRenderer(renderer);
+
+    scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
+    scalarBar->SetTitle("|field|");
+    scalarBar->SetNumberOfLabels(4);
+    scalarBar->SetVisibility(false);
+    renderer->AddActor2D(scalarBar);
+}
+
+void ResonatorView::setMesh(const FemMesh& mesh)
+{
+    if (solidsActor) renderer->RemoveActor(solidsActor);
+    if (meshActor)   renderer->RemoveActor(meshActor);
+    clearField();
+
+    vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+    pts->SetNumberOfPoints(mesh.nodes.size());
+    double lo[3] = { 1e30, 1e30, 1e30 }, hi[3] = { -1e30, -1e30, -1e30 };
+    for (vtkIdType i = 0; i < (vtkIdType)mesh.nodes.size(); ++i) {
+        pts->SetPoint(i, mesh.nodes[i][0], mesh.nodes[i][1], mesh.nodes[i][2]);
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = std::min(lo[k], mesh.nodes[i][k]);
+            hi[k] = std::max(hi[k], mesh.nodes[i][k]);
+        }
+    }
+    modelDiagonal = std::sqrt((hi[0]-lo[0])*(hi[0]-lo[0]) + (hi[1]-lo[1])*(hi[1]-lo[1]) +
+                              (hi[2]-lo[2])*(hi[2]-lo[2]));
+    if (modelDiagonal <= 0.0) modelDiagonal = 1.0;
+
+    vtkSmartPointer<vtkUnstructuredGrid> ug = vtkSmartPointer<vtkUnstructuredGrid>::New();
+    ug->SetPoints(pts);
+    ug->Allocate(mesh.tets.size());
+    for (const auto& t : mesh.tets) {
+        vtkIdType ids[4] = { (vtkIdType)t[0], (vtkIdType)t[1], (vtkIdType)t[2], (vtkIdType)t[3] };
+        ug->InsertNextCell(VTK_TETRA, 4, ids);
+    }
+
+    /* Solids: exterior surface, semi-transparent. */
+    vtkSmartPointer<vtkGeometryFilter> geo = vtkSmartPointer<vtkGeometryFilter>::New();
+    geo->SetInputData(ug);
+    vtkSmartPointer<vtkPolyDataMapper> smap = vtkSmartPointer<vtkPolyDataMapper>::New();
+    smap->SetInputConnection(geo->GetOutputPort());
+    smap->ScalarVisibilityOff();
+    solidsActor = vtkSmartPointer<vtkActor>::New();
+    solidsActor->SetMapper(smap);
+    solidsActor->GetProperty()->SetColor(0.78, 0.80, 0.86);
+    solidsActor->GetProperty()->SetOpacity(0.30);
+    renderer->AddActor(solidsActor);
+
+    /* Mesh: tetrahedral wireframe. */
+    vtkSmartPointer<vtkDataSetMapper> mmap = vtkSmartPointer<vtkDataSetMapper>::New();
+    mmap->SetInputData(ug);
+    mmap->ScalarVisibilityOff();
+    meshActor = vtkSmartPointer<vtkActor>::New();
+    meshActor->SetMapper(mmap);
+    meshActor->GetProperty()->SetRepresentationToWireframe();
+    meshActor->GetProperty()->SetColor(0.15, 0.35, 0.15);
+    meshActor->GetProperty()->SetLineWidth(0.5);
+    meshActor->SetVisibility(false);   /* mesh layer off by default */
+    renderer->AddActor(meshActor);
+
+    resetView();
+}
+
+void ResonatorView::setField(const std::vector<std::array<double, 3> >& points,
+                             const std::vector<std::array<double, 3> >& vectors)
+{
+    clearField();
+    if (points.empty() || points.size() != vectors.size()) return;
+
+    vtkSmartPointer<vtkPoints>      p   = vtkSmartPointer<vtkPoints>::New();
+    vtkSmartPointer<vtkDoubleArray> vec = vtkSmartPointer<vtkDoubleArray>::New();
+    vtkSmartPointer<vtkDoubleArray> mag = vtkSmartPointer<vtkDoubleArray>::New();
+    vec->SetNumberOfComponents(3); vec->SetName("field");
+    mag->SetNumberOfComponents(1); mag->SetName("mag");
+    double maxMag = 0.0;
+    for (size_t i = 0; i < points.size(); ++i) {
+        p->InsertNextPoint(points[i][0], points[i][1], points[i][2]);
+        vec->InsertNextTuple3(vectors[i][0], vectors[i][1], vectors[i][2]);
+        double m = std::sqrt(vectors[i][0]*vectors[i][0] + vectors[i][1]*vectors[i][1] +
+                             vectors[i][2]*vectors[i][2]);
+        mag->InsertNextValue(m);
+        maxMag = std::max(maxMag, m);
+    }
+    if (maxMag <= 0.0) return;
+
+    vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+    pd->SetPoints(p);
+    pd->GetPointData()->SetVectors(vec);
+    pd->GetPointData()->SetScalars(mag);
+
+    vtkSmartPointer<vtkArrowSource> arrow = vtkSmartPointer<vtkArrowSource>::New();
+    vtkSmartPointer<vtkGlyph3D> glyph = vtkSmartPointer<vtkGlyph3D>::New();
+    glyph->SetInputData(pd);
+    glyph->SetSourceConnection(arrow->GetOutputPort());
+    glyph->SetVectorModeToUseVector();
+    glyph->SetScaleModeToScaleByVector();
+    glyph->SetColorModeToColorByScalar();
+    glyph->SetScaleFactor(0.06 * modelDiagonal / maxMag);
+    glyph->OrientOn();
+
+    vtkSmartPointer<vtkLookupTable> lut = vtkSmartPointer<vtkLookupTable>::New();
+    lut->SetHueRange(0.667, 0.0);   /* blue (low) -> red (high) */
+    lut->SetTableRange(0.0, maxMag);
+    lut->Build();
+
+    vtkSmartPointer<vtkPolyDataMapper> map = vtkSmartPointer<vtkPolyDataMapper>::New();
+    map->SetInputConnection(glyph->GetOutputPort());
+    map->SetLookupTable(lut);
+    map->SetScalarRange(0.0, maxMag);
+
+    fieldsActor = vtkSmartPointer<vtkActor>::New();
+    fieldsActor->SetMapper(map);
+    renderer->AddActor(fieldsActor);
+
+    scalarBar->SetLookupTable(lut);
+    scalarBar->SetVisibility(true);
+    renderWindow()->Render();
+}
+
+void ResonatorView::clearField()
+{
+    if (fieldsActor) { renderer->RemoveActor(fieldsActor); fieldsActor = nullptr; }
+    if (scalarBar)   scalarBar->SetVisibility(false);
+}
+
+void ResonatorView::setLayerVisible(Layer layer, bool visible)
+{
+    switch (layer) {
+    case SOLIDS: if (solidsActor) solidsActor->SetVisibility(visible); break;
+    case MESH:   if (meshActor)   meshActor->SetVisibility(visible);   break;
+    case FIELDS:
+        if (fieldsActor) fieldsActor->SetVisibility(visible);
+        scalarBar->SetVisibility(visible && fieldsActor != nullptr);
+        break;
+    }
+    if (renderWindow()) renderWindow()->Render();
+}
+
+void ResonatorView::resetView()
+{
+    renderer->ResetCamera();
+    if (renderWindow()) renderWindow()->Render();
+}

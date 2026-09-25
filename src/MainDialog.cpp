@@ -7,12 +7,13 @@
 #include <QDoubleValidator>
 #include <QIntValidator>
 #include <QFileDialog>
+#include <QListWidgetItem>
 #include <QTimer>
-#include <QPixmap>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 static const double C_LIGHT = 299792458.0;   /* m/s */
@@ -27,16 +28,14 @@ static QLineEdit* field(const QString& val)
 MainDialog::MainDialog()
 {
     setWindowTitle("ResonatorFEM");
-    grapher = new MathGrapher();
-    engine  = new MicroEngine(*grapher);
+    view   = new ResonatorView();
+    engine = new MicroEngine();
 
-    /* ---- shape selectors ---- */
     cavityCombo = new QComboBox();
     cavityCombo->addItems({ "Cylinder", "Rectangular (box)" });
     coreCombo = new QComboBox();
     coreCombo->addItems({ "None", "Cylinder", "Rectangular (box)", "Spiral (elliptical)" });
 
-    /* ---- cavity parameter groups ---- */
     cavRadiusEdit = field("1.0"); cavHeightEdit = field("2.0");
     cavCylBox = new QGroupBox("Cylinder cavity");
     { QFormLayout* f = new QFormLayout(cavCylBox);
@@ -47,7 +46,6 @@ MainDialog::MainDialog()
     { QFormLayout* f = new QFormLayout(cavBoxBox);
       f->addRow("a (x)", cavAEdit); f->addRow("b (y)", cavBEdit); f->addRow("d (z)", cavDEdit); }
 
-    /* ---- core parameter groups ---- */
     coreRadiusEdit = field("0.3"); coreHeightEdit = field("2.0");
     coreCylBox = new QGroupBox("Cylinder core");
     { QFormLayout* f = new QFormLayout(coreCylBox);
@@ -66,18 +64,19 @@ MainDialog::MainDialog()
       f->addRow("turns", turnsEdit); f->addRow("ellipse semi-axis (radial)", ellAEdit);
       f->addRow("ellipse semi-axis (axial)", ellBEdit); }
 
-    /* ---- solve parameters ---- */
     meshSizeEdit = field("0.2");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
 
+    solidsCheck = new QCheckBox("Solids"); solidsCheck->setChecked(true);
+    fieldsCheck = new QCheckBox("Fields"); fieldsCheck->setChecked(true);
+    meshCheck   = new QCheckBox("Mesh");   meshCheck->setChecked(false);
+
     computeButton   = new QPushButton("Compute modes");
     saveImageButton = new QPushButton("Save image");
     resultsList = new QListWidget();
-    console = new QTextEdit(); console->setReadOnly(true);
-    console->setMaximumHeight(120);
+    console = new QTextEdit(); console->setReadOnly(true); console->setMaximumHeight(110);
 
-    /* ---- layout: left controls, right GL view ---- */
     QVBoxLayout* controls = new QVBoxLayout();
     QFormLayout* shapeForm = new QFormLayout();
     shapeForm->addRow("Cavity", cavityCombo);
@@ -98,9 +97,17 @@ MainDialog::MainDialog()
     controls->addWidget(resultsList);
     controls->addWidget(console);
 
+    QHBoxLayout* layerRow = new QHBoxLayout();
+    layerRow->addWidget(new QLabel("Layers:"));
+    layerRow->addWidget(solidsCheck);
+    layerRow->addWidget(fieldsCheck);
+    layerRow->addWidget(meshCheck);
+    layerRow->addStretch(1);
+    layerRow->addWidget(saveImageButton);
+
     QVBoxLayout* viewCol = new QVBoxLayout();
-    viewCol->addWidget(grapher, 1);
-    viewCol->addWidget(saveImageButton);
+    viewCol->addWidget(view, 1);
+    viewCol->addLayout(layerRow);
 
     QHBoxLayout* root = new QHBoxLayout(this);
     QWidget* controlsW = new QWidget(); controlsW->setLayout(controls);
@@ -112,27 +119,16 @@ MainDialog::MainDialog()
     connect(coreCombo,   SIGNAL(currentIndexChanged(int)), this, SLOT(coreChanged()));
     connect(computeButton,   SIGNAL(clicked()), this, SLOT(computeSlot()));
     connect(saveImageButton, SIGNAL(clicked()), this, SLOT(saveImageSlot()));
+    connect(solidsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
+    connect(fieldsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
+    connect(meshCheck,   SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
+    connect(resultsList, SIGNAL(currentRowChanged(int)), this, SLOT(modeSelected(int)));
 
     cavityChanged();
     coreChanged();
-    resize(1000, 640);
+    resize(1060, 660);
 
     if (std::getenv("RESONATOR_AUTORUN")) QTimer::singleShot(400, this, SLOT(autoRun()));
-}
-
-void MainDialog::autoRun()
-{
-    computeSlot();
-    if (const char* shot = std::getenv("RESONATOR_SHOT")) {
-        this->grab().save(QString(shot));
-        QImage gl = grapher->grabFrameBuffer();
-        gl.save(QString(shot) + ".glview.png");
-    }
-    std::printf("=== AUTORUN results (%d modes) ===\n", resultsList->count());
-    for (int i = 0; i < resultsList->count(); ++i)
-        std::printf("  %s\n", resultsList->item(i)->text().toStdString().c_str());
-    std::fflush(stdout);
-    qApp->quit();
 }
 
 void MainDialog::cavityChanged()
@@ -180,6 +176,29 @@ void MainDialog::log(const QString& s)
     QApplication::processEvents();
 }
 
+void MainDialog::layerToggled()
+{
+    view->setLayerVisible(ResonatorView::SOLIDS, solidsCheck->isChecked());
+    view->setLayerVisible(ResonatorView::FIELDS, fieldsCheck->isChecked());
+    view->setLayerVisible(ResonatorView::MESH,   meshCheck->isChecked());
+}
+
+void MainDialog::showModeField(int internalIndex)
+{
+    if (internalIndex < 0) return;
+    engine->calculateBasisKoef((uint32_t)internalIndex);
+    std::vector<std::array<double, 3> > pts, vecs;
+    engine->sampleFieldAtCentroids(pts, vecs);
+    view->setField(pts, vecs);
+    view->setLayerVisible(ResonatorView::FIELDS, fieldsCheck->isChecked());
+}
+
+void MainDialog::modeSelected(int row)
+{
+    if (row < 0 || row >= resultsList->count()) return;
+    showModeField(resultsList->item(row)->data(Qt::UserRole).toInt());
+}
+
 void MainDialog::computeSlot()
 {
     computeButton->setEnabled(false);
@@ -187,7 +206,6 @@ void MainDialog::computeSlot()
     ResonatorSpec spec = readSpec();
 
     log("Meshing (Gmsh/OpenCASCADE)...");
-    FemMesh mesh;
     std::string err;
     if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
         log("Mesh FAILED: " + QString::fromStdString(err));
@@ -195,14 +213,8 @@ void MainDialog::computeSlot()
         return;
     }
     log(QString("Mesh: %1 nodes, %2 tets").arg(mesh.nodes.size()).arg(mesh.tets.size()));
-
-    /* View bounds from the mesh. */
-    double lo[3] = { 1e30, 1e30, 1e30 }, hi[3] = { -1e30, -1e30, -1e30 };
-    for (const auto& p : mesh.nodes)
-        for (int k = 0; k < 3; ++k) { lo[k] = std::min(lo[k], p[k]); hi[k] = std::max(hi[k], p[k]); }
-    grapher->clearPoints(); grapher->clearLines(); grapher->clearTetraedrs();
-    grapher->setBeginPoint(MathPoint3D(lo[0], lo[1], lo[2]));
-    grapher->setSizeRegion(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    view->setMesh(mesh);
+    layerToggled();
 
     engine->setResonatorMode(true);
     engine->setGradDivPenalty(penaltyEdit->text().toDouble());
@@ -213,26 +225,27 @@ void MainDialog::computeSlot()
         computeButton->setEnabled(true);
         return;
     }
-    engine->drawAllObject();     /* store mesh points + tetrahedra in the view */
-    grapher->setEnable(POINTS_TYPE);
-    grapher->setEnable(TETRAEDRS_TYPE);
-    grapher->setEnable(DRAW);    /* enables drawing + triggers a repaint */
-
     log("Solving eigenproblem...");
     if (!engine->calculateSync()) {
         log("Solve FAILED");
         computeButton->setEnabled(true);
         return;
     }
+
     std::vector<double> k2;
     engine->getEighValues(k2);
-    std::sort(k2.begin(), k2.end());
-    for (double v : k2) {
-        if (v <= 0.0) continue;
-        double f = C_LIGHT * std::sqrt(v) / (2.0 * M_PI) / 1.0e6;
-        resultsList->addItem(QString("%1  MHz   (k^2 = %2)")
-                             .arg(f, 0, 'f', 3).arg(v, 0, 'f', 5));
+    std::vector<std::pair<double, int> > modes;
+    for (int i = 0; i < (int)k2.size(); ++i) modes.push_back(std::make_pair(k2[i], i));
+    std::sort(modes.begin(), modes.end());
+    for (const auto& m : modes) {
+        if (m.first <= 0.0) continue;
+        double f = C_LIGHT * std::sqrt(m.first) / (2.0 * M_PI) / 1.0e6;
+        QListWidgetItem* it = new QListWidgetItem(
+            QString("%1 MHz   (k^2 = %2)").arg(f, 0, 'f', 3).arg(m.first, 0, 'f', 5));
+        it->setData(Qt::UserRole, m.second);   /* internal mode index for basis reconstruction */
+        resultsList->addItem(it);
     }
+    if (resultsList->count() > 0) resultsList->setCurrentRow(0);   /* show fundamental field */
     log("Done.");
     computeButton->setEnabled(true);
 }
@@ -240,5 +253,19 @@ void MainDialog::computeSlot()
 void MainDialog::saveImageSlot()
 {
     QString fn = QFileDialog::getSaveFileName(this, "Save image", "resonator.png", "PNG (*.png)");
-    if (!fn.isEmpty()) grapher->saveImage(fn);
+    if (!fn.isEmpty()) view->grabFramebuffer().save(fn);
+}
+
+void MainDialog::autoRun()
+{
+    computeSlot();
+    if (const char* shot = std::getenv("RESONATOR_SHOT")) {
+        view->grabFramebuffer().save(QString(shot));
+        this->grab().save(QString(shot) + ".ui.png");   /* full window (controls) */
+    }
+    std::printf("=== AUTORUN results (%d modes) ===\n", resultsList->count());
+    for (int i = 0; i < resultsList->count(); ++i)
+        std::printf("  %s\n", resultsList->item(i)->text().toStdString().c_str());
+    std::fflush(stdout);
+    qApp->quit();
 }

@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <float.h>
 #include "MathPoint3D.h"
-#include "MathGrapher.h"
 #include "MicroNode.h"
 #include "MicroTetraedr.h"
 #include "MicroFlags.h"
@@ -41,16 +40,12 @@ public:
     bool            linkNodes();
     void            clearLinkNodes();
     bool            setNumberNodesTetraedrs();
-    bool            calculateDirihle(MathGrapher *grapher = 0);
     bool            isAllDelone();
     bool            getIteratorNodes(std::list<MicroNode>::iterator& itBegin, std::list<MicroNode>::iterator& itEnd);
     bool            getIteratorTetraedrs(ListMicroTetraedr::iterator& itBegin, ListMicroTetraedr::iterator& itEnd);
     uint32_t        getNumNodes();
     uint32_t        getNumTetraedrs();
     double          volumeSuperStruct();
-    bool            drawPoints(MathGrapher& grapher, uint32_t flagsRedPoints);
-    bool            drawEdges(MathGrapher& grapher);
-    bool            drawTetraedrs(MathGrapher& grapher);
     void            clearTetraedrs();
     void            clear();
 private:

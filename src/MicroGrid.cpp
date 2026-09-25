@@ -477,76 +477,6 @@ bool MicroGrid::setNumberNodesTetraedrs()
     return true;
 }
 
-bool MicroGrid::calculateDirihle(MathGrapher *grapher)  // TODO: работает не правильно, если проекции центра сферы выходят за пределы тетраэдра
-{
-    ListMicroTetraedr::iterator itTetraedr;
-    std::list<MicroNode>::iterator itNode;
-    uint32_t i, j, numSurface;
-    MathPoint3D centerEdge[3], centerNeighbourSphere;
-    MathPoint3D centerSurface;
-    MathPoint3D centerSphere;
-    double areaSurface;
-    bool neighbourCenterExtern;
-
-    if(!isLinkNodes) return false;
-    if(isClearTetraedrs) return false;
-    /* обнуление площадей граней ячеек Дирихле */
-    for(itNode = listNodes.begin(); itNode != listNodes.end(); itNode++)
-        for(i=0; i<itNode->numNeighbourNodes(); i++) itNode->_areaFacesDirihle[i] = 0.0;
-    /* вычисление площадей граней ячеек Дирихле */
-    for(itTetraedr = listTetraedr.begin(); itTetraedr != listTetraedr.end(); itTetraedr++)
-    {
-        centerSphere = itTetraedr->pointCenterSphere();
-        for(i=0; i<4; i++)           /* проход по всем граням тетраэдра */
-        {
-            if(!itTetraedr->isInTetraedr(centerSphere, i)) continue;
-            for(j=0; j<3; j++)       /* проход по всем ребрам грани */
-                centerEdge[j] = (itTetraedr->nodes(i + j)->point() + itTetraedr->nodes(i + (j + 1)%3)->point())/2.0;    // центры ребер
-            neighbourCenterExtern = false;
-            if(itTetraedr->tetraedrs(i) != EmptyIterator())
-            {
-                itTetraedr->tetraedrs(i)->getNumSurface(itTetraedr, numSurface);
-                centerNeighbourSphere = itTetraedr->tetraedrs(i)->pointCenterSphere();
-                if(!itTetraedr->tetraedrs(i)->isInTetraedr(centerNeighbourSphere, numSurface)) neighbourCenterExtern = true;
-            }
-            if(!neighbourCenterExtern) centerSurface = ProjectionPointSurface(centerSphere,
-                                                                              itTetraedr->nodes(i)->point(),
-                                                                              itTetraedr->nodes(i + 1)->point(),
-                                                                              itTetraedr->nodes(i + 2)->point());
-            else
-            {
-                /* Если у соседнего тетраэдра центр описанной сферы попадает в текущий тетраэдр */
-                centerSurface = itTetraedr->tetraedrs(i)->pointCenterSphere();
-            }
-            for(j=0; j<3; j++)
-            {
-                for(numSurface=0; numSurface<itTetraedr->nodes(i + j)->numNeighbourNodes(); numSurface++)
-                    if(itTetraedr->nodes(i + j)->neighbourNodes(numSurface) == itTetraedr->nodes(i + (j + 1)%3))
-                        break;
-
-                areaSurface = AreaTriangle(centerEdge[j], centerSphere, centerSurface);
-                if(grapher /*&& itTetraedr == listTetraedr.begin()*/)
-                {
-                    grapher->addLine(centerSphere, centerSurface, QColor(0.0, 0.0, 255.0, 255.0));
-                    grapher->addLine(centerSurface, centerEdge[j], QColor(0.0, 0.0, 255.0, 255.0));
-                }
-                itTetraedr->nodes(i + j)->_areaFacesDirihle[numSurface] += areaSurface;
-
-                for(numSurface=0; numSurface<itTetraedr->nodes(i + (j + 1)%3)->numNeighbourNodes(); numSurface++)
-                    if(itTetraedr->nodes(i + (j + 1)%3)->neighbourNodes(numSurface) == itTetraedr->nodes(i + j))
-                        break;
-
-                itTetraedr->nodes(i + (j + 1)%3)->_areaFacesDirihle[numSurface] += areaSurface;
-            }
-
-        }
-
-
-    }
-
-    return true;
-}
-
 bool MicroGrid::isAllDelone()
 {
     uint32_t i;
@@ -609,56 +539,6 @@ double MicroGrid::volumeSuperStruct()
     for(itTetraedr = listTetraedr.begin(); itTetraedr != listTetraedr.end(); itTetraedr++)
         volume += itTetraedr->volume();
     return volume;
-}
-
-bool MicroGrid::drawPoints(MathGrapher &grapher, uint32_t flagsRedPoints)
-{
-    std::list<MicroNode>::iterator itNode;
-
-    if(!listNodes.size()) return false;
-    for(itNode = listNodes.begin(); itNode != listNodes.end(); itNode++)
-        if(itNode->numNeighbourNodes())
-        {
-            if(!itNode->isFlags(flagsRedPoints))
-                grapher.addPoint(itNode->point(), QColor(0.0, 0.0, 0.0, 255.0));
-            else grapher.addPoint(itNode->point(), QColor(255.0, 0.0, 0.0, 255.0));
-        }
-    return true;
-}
-
-bool MicroGrid::drawEdges(MathGrapher &grapher)
-{
-    std::list<MicroNode>::iterator itNode;
-    std::vector<bool> drawPoint;
-    uint32_t i;
-
-    if(!isLinkNodes) return false;
-    if(!listNodes.size()) return false;
-    if(!isNumNodesTetraedrs) setNumberNodesTetraedrs();
-    drawPoint.resize(listNodes.size(), false);
-    for(itNode = listNodes.begin(); itNode != listNodes.end(); itNode++)
-    {
-        for(i=0; i<itNode->numNeighbourNodes(); i++)
-            if(!drawPoint[itNode->neighbourNodes(i)->getSerialNumber()])
-                grapher.addLine(itNode->point(), itNode->neighbourNodes(i)->point(), QColor(0.0, 255.0, 0.0, 255.0));
-        drawPoint[itNode->getSerialNumber()] = true;
-    }
-    return true;
-}
-
-bool MicroGrid::drawTetraedrs(MathGrapher &grapher)
-{
-    ListMicroTetraedr::iterator itTetraedr;
-
-    if(isClearTetraedrs) return false;
-    if(!listTetraedr.size()) return false;
-    for(itTetraedr=listTetraedr.begin(); itTetraedr!=listTetraedr.end(); itTetraedr++)
-        grapher.addTetraedrs(itTetraedr->nodes(0)->point(),
-                             itTetraedr->nodes(1)->point(),
-                             itTetraedr->nodes(2)->point(),
-                             itTetraedr->nodes(3)->point(),
-                             QColor(0.0, 255.0, 0.0, 100.0));
-    return true;
 }
 
 void MicroGrid::clearTetraedrs()
