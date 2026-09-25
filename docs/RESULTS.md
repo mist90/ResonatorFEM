@@ -151,12 +151,18 @@ Because physical modes satisfy `GᵀT e = 0`, the penalty is **exactly zero on t
 take the smallest. (Correct, unlike the Euclidean `GGᵀ` penalty, which perturbs
 physical modes, or tree-cotree zeroing, which corrupts the eigenproblem — both above.)
 
-Two details made `G` the true null space (`‖S·G‖/‖S‖ ≈ 0.01–0.07` for cavities):
+Two details made `G` the true null space:
 - **Length scaling** — basis is `len·Whitney`, so a nodal gradient's DOF coefficient
   is `(φ_head − φ_tail)/len` → G entries `∓1/len`.
 - **Interior-only columns** — only interior nodes are columns of `G`; a boundary-node
   gradient leaks onto the excluded PEC edges and is not a null vector. Including
   boundary columns was what spoiled the earlier attempts.
+
+`‖S·G‖/‖S‖` is now **~1e-15 (machine precision)** for every geometry, so the penalty
+preserves the physical modes exactly. (It was 0.01–0.4 while the stiffness used the
+old hand-rolled `MathMatrix` cofactor inverse, which lost precision on ill-conditioned
+curved-boundary tetrahedra; migrating the local-matrix algebra to Eigen fixed that —
+see "Matrix algebra" below.)
 
 ON by default in `resonator_cli` (factor 50); `PENALTY=<factor>` (0 disables) and
 `SIGMA=<k²>` are study hooks.
@@ -169,12 +175,26 @@ ON by default in `resonator_cli` (factor 50); `PENALTY=<factor>` (0 disables) an
 | Box      | TE₁₀₁ | 180.2 MHz | 179.28   | −0.49 % |
 | Coaxial  | TEM   | 74.9 MHz  | 75.51    | +0.75 % |
 
-**Spiral core:** the fundamental now emerges as the smallest eigenvalue and converges
-toward the helical quarter-wave estimate (~11.8 MHz) under refinement — 10.07 MHz at
-meshSize 0.18 → 11.87 MHz at 0.13. The gauge residual is larger on the fully-curved
-helix (0.39 → 0.27 as the mesh refines: some boundary nodes on the thin helical wall
-are imperfectly resolved at coarse meshes) but shrinks with refinement and the
-fundamental is physically consistent.
+**Spiral core:** the fundamental emerges as the smallest eigenvalue. Its gauge
+residual — once the worst case (0.39, thought to be a mesh-quality limitation) — is
+now also ~1e-15 after the Eigen migration, so the penalty is exact here too.
+
+## Matrix algebra — hand-rolled MathMatrix/MathMatrixSparse removed (Eigen)
+
+The FEM assembly and eigensolvers originally used two hand-written matrix classes.
+Since Eigen was already a dependency (via Spectra), both were removed:
+- **Sparse:** the global stiffness/mass are assembled directly as `Eigen::SparseMatrix`
+  via triplets (`setFromTriplets`), eliminating `MathMatrixSparse` *and* the old
+  O(n²) cell-by-cell conversion to Eigen that preceded every solve.
+- **Dense:** the local element matrices and barycentric solves use Eigen fixed-size
+  types (`Matrix4d`, `Matrix3d`, `Matrix<double,6,6>`), removing `MathMatrix`.
+
+Besides the cleanup, this **materially improved accuracy**: Eigen's 4×4 inverse is far
+more stable than the old cofactor-expansion inverse on ill-conditioned tetrahedra, so
+the discrete gradient is now exactly in the null space of the stiffness
+(`‖S·G‖/‖S‖ ~ 1e-15` everywhere, vs 0.01–0.4 before), the grad-div penalty preserves
+physical modes exactly, and the eigen-frequencies converge cleanly with refinement
+(cyl TM₀₁₀: −0.69 % → −0.30 % → −0.15 % at meshSize 0.3 → 0.2 → 0.15).
 
 ## Dense eigen-solve: robustness and scaling — background
 
@@ -211,6 +231,5 @@ fundamental is physically consistent.
 
 Numerical core and features are in place. Remaining polish:
 
-- Reduce the spiral gauge residual (better boundary-node handling on curved
-  walls) and run the solve off the UI thread for large meshes.
-- Contribution hygiene: license, example gallery, CI.
+- Run the solve off the UI thread for large meshes.
+- Contribution hygiene: example gallery, CI.

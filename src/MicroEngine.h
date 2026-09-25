@@ -7,10 +7,10 @@
 #include <QObject>
 #include "MicroGrid.h"
 #include "MicroNode.h"
-#include "MathMatrix.h"
-#include "MathMatrixSparse.h"
+#include "MathComplex.h"
 #include "MathEighValues.h"
 #include "FemMesh.h"
+#include <Eigen/Core>
 
 #define EDGE_REVERSE        (0x1)
 #define EDGE_NULL           (0x2)
@@ -72,8 +72,8 @@ signals:
 private:
     bool            _calculate();
     bool            calculateResonatorMode(std::vector<double>& epsilonValuesTetraedrs);
-    void            getLocalMatrixResonator(MathMatrix<double>& localMatrixT,
-                                            MathMatrix<double>& localMatrixR,
+    void            getLocalMatrixResonator(Eigen::Matrix<double, 6, 6>& localMatrixT,
+                                            Eigen::Matrix<double, 6, 6>& localMatrixR,
                                             MicroTetraedr& tetraedr,
                                             double epsilon,
                                             std::set<uint32_t>& indexNullElements);

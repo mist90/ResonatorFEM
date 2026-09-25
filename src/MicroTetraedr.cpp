@@ -1,5 +1,5 @@
 #include "MicroTetraedr.h"
-#include "MathMatrix.h"
+#include <Eigen/Dense>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -206,28 +206,24 @@ MicroEdge MicroTetraedr::getEdge(uint32_t numEdge)
 
 MathVector3D MicroTetraedr::getValueBasisFunc(const MathPoint3D &point, uint32_t numEdge)
 {
-    MathMatrix<double> matrix(4, 4);
+    Eigen::Matrix4d matrix;
     MathVector3D vector1, vector2, ret;
-    double a[2], b[2], c[2], d[2];  /* коэффициенты барицентрических функций */
+    double a[2], b[2], c[2], d[2];  /* barycentric-function coefficients */
     uint32_t i;
 
     for(i=0; i<4; i++)
     {
-        matrix.element(i, 0) = nodes(i)->point().getX();
-        matrix.element(i, 1) = nodes(i)->point().getY();
-        matrix.element(i, 2) = nodes(i)->point().getZ();
-        matrix.element(i, 3) = 1.0;
+        matrix(0, i) = nodes(i)->point().getX();
+        matrix(1, i) = nodes(i)->point().getY();
+        matrix(2, i) = nodes(i)->point().getZ();
+        matrix(3, i) = 1.0;
     }
-    matrix = matrix.inverseMatrix();
-    a[0] = matrix.element(3, getNumBeginEdge(numEdge));
-    a[1] = matrix.element(3, getNumEndEdge(numEdge));
-    b[0] = matrix.element(0, getNumBeginEdge(numEdge));
-    b[1] = matrix.element(0, getNumEndEdge(numEdge));
-    c[0] = matrix.element(1, getNumBeginEdge(numEdge));
-    c[1] = matrix.element(1, getNumEndEdge(numEdge));
-    d[0] = matrix.element(2, getNumBeginEdge(numEdge));
-    d[1] = matrix.element(2, getNumEndEdge(numEdge));
-    matrix.clear();
+    Eigen::Matrix4d minv = matrix.inverse();
+    uint32_t mb = getNumBeginEdge(numEdge), me = getNumEndEdge(numEdge);
+    a[0] = minv(mb, 3);  a[1] = minv(me, 3);
+    b[0] = minv(mb, 0);  b[1] = minv(me, 0);
+    c[0] = minv(mb, 1);  c[1] = minv(me, 1);
+    d[0] = minv(mb, 2);  d[1] = minv(me, 2);
     vector1 = MathVector3D(b[1], c[1], d[1]);
     vector1 = vector1*(a[0] + b[0]*((MathPoint3D)point).getX() + c[0]*((MathPoint3D)point).getY() + d[0]*((MathPoint3D)point).getZ());
     vector2 = MathVector3D(b[0], c[0], d[0]);
@@ -239,20 +235,11 @@ MathVector3D MicroTetraedr::getValueBasisFunc(const MathPoint3D &point, uint32_t
 
 double VolumeTetraedr(MathPoint3D &point1, MathPoint3D &point2, MathPoint3D &point3, MathPoint3D &point4)
 {
-    MathMatrix<double> matrix;
-    double volume;
-    matrix.setSize(3, 3);
-    matrix.element(0, 0) = point2.getX() - point1.getX();
-    matrix.element(0, 1) = point3.getX() - point1.getX();
-    matrix.element(0, 2) = point4.getX() - point1.getX();
-    matrix.element(1, 0) = point2.getY() - point1.getY();
-    matrix.element(1, 1) = point3.getY() - point1.getY();
-    matrix.element(1, 2) = point4.getY() - point1.getY();
-    matrix.element(2, 0) = point2.getZ() - point1.getZ();
-    matrix.element(2, 1) = point3.getZ() - point1.getZ();
-    matrix.element(2, 2) = point4.getZ() - point1.getZ();
-    volume = fabs(matrix.determinantNoCopyMatrix()/6.0);
-    return volume;
+    Eigen::Matrix3d m;
+    m.row(0) << point2.getX() - point1.getX(), point2.getY() - point1.getY(), point2.getZ() - point1.getZ();
+    m.row(1) << point3.getX() - point1.getX(), point3.getY() - point1.getY(), point3.getZ() - point1.getZ();
+    m.row(2) << point4.getX() - point1.getX(), point4.getY() - point1.getY(), point4.getZ() - point1.getZ();
+    return fabs(m.determinant() / 6.0);
 }
 ListMicroTetraedr::ListMicroTetraedr(): std::list<MicroTetraedr>() { }
 

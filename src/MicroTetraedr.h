@@ -3,7 +3,6 @@
 
 #include "MathPoint3D.h"
 #include "MathVector3D.h"
-#include "MathMatrix.h"
 #include "MicroNode.h"
 #include "MicroFlags.h"
 #include <stdint.h>

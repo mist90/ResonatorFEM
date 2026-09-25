@@ -27,8 +27,6 @@ add_library(resonator_core STATIC
   src/MathPoint3D.cpp
   src/MathVector3D.cpp
   src/MathComplex.cpp
-  src/MathMatrix.cpp
-  src/MathMatrixSparse.cpp
   src/MathEighValues.cpp
   src/CsgGmshMesher.cpp
 )

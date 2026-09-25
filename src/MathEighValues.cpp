@@ -31,26 +31,20 @@ void dsygv_(const int* itype, const char* jobz, const char* uplo,
             double* w, double* work, const int* lwork, int* info);
 }
 
-bool MathEighValVector(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
+bool MathEighValVector(const Eigen::SparseMatrix<double>& matrixA, const Eigen::SparseMatrix<double>& matrixB,
                        std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
-    if(matrixA.width() != matrixA.height()) return false;
-    if(matrixB.width() != matrixB.height()) return false;
-    if(matrixA.width() != matrixB.width())  return false;
+    if(matrixA.rows() != matrixA.cols()) return false;
+    if(matrixB.rows() != matrixB.cols()) return false;
+    if(matrixA.rows() != matrixB.rows()) return false;
 
-    const int n = (int)matrixA.width();
+    const int n = (int)matrixA.rows();
     if(n <= 0) return false;
 
-    /* Dense column-major copies (A x = lambda B x). Both matrices are symmetric
-     * and fully populated by the assembly, so we read every element. */
-    std::vector<double> A((std::size_t)n * n, 0.0);
-    std::vector<double> B((std::size_t)n * n, 0.0);
-    for(int col = 0; col < n; col++)
-        for(int row = 0; row < n; row++)
-        {
-            A[(std::size_t)row + (std::size_t)col * n] = matrixA.element((uint32_t)col, (uint32_t)row);
-            B[(std::size_t)row + (std::size_t)col * n] = matrixB.element((uint32_t)col, (uint32_t)row);
-        }
+    /* Dense column-major copies (Eigen is column-major); dsygv overwrites A with
+     * the eigenvectors and B with the Cholesky factor. */
+    Eigen::MatrixXd A = Eigen::MatrixXd(matrixA);
+    Eigen::MatrixXd B = Eigen::MatrixXd(matrixB);
 
     eighValue.assign(n, 0.0);
     const int itype = 1;          /* A x = lambda B x            */
@@ -58,7 +52,6 @@ bool MathEighValVector(MathMatrixSparse<double>& matrixA, MathMatrixSparse<doubl
     const char uplo = 'U';
     int lda = n, ldb = n, info = 0, lwork = -1;
 
-    /* Workspace query. */
     double workQuery = 0.0;
     dsygv_(&itype, &jobz, &uplo, &n, A.data(), &lda, B.data(), &ldb,
            eighValue.data(), &workQuery, &lwork, &info);
@@ -76,25 +69,9 @@ bool MathEighValVector(MathMatrixSparse<double>& matrixA, MathMatrixSparse<doubl
         return false;   /* info>n: B not positive definite; else no convergence */
     }
 
-    /* On success A holds the eigenvectors as columns (column-major):
-     * eigVector[row + mode*n]. */
-    eigVector = A;
+    /* A now holds the eigenvectors as columns (column-major): eigVector[row+mode*n]. */
+    eigVector.assign(A.data(), A.data() + (std::size_t)n * n);
     return true;
-}
-
-/* Convert a symmetric, fully-populated MathMatrixSparse to Eigen sparse. */
-static Eigen::SparseMatrix<double> toEigen(MathMatrixSparse<double>& M, int n)
-{
-    std::vector<Eigen::Triplet<double> > trip;
-    for(int col = 0; col < n; col++)
-        for(int row = 0; row < n; row++)
-        {
-            double v = M.element((uint32_t)col, (uint32_t)row);
-            if(v != 0.0) trip.emplace_back(row, col, v);
-        }
-    Eigen::SparseMatrix<double> E(n, n);
-    E.setFromTriplets(trip.begin(), trip.end());
-    return E;
 }
 
 /* Core shift-invert: `nev` eigenpairs of Ae x = lambda Be x nearest `sigma`.
@@ -148,41 +125,39 @@ static void packResults(const Eigen::VectorXd& vals, const Eigen::MatrixXd& vecs
             eigVector[(std::size_t)row + (std::size_t)mode * n] = vecs(row, mode);
 }
 
-bool MathEighValVectorShiftInvert(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
+bool MathEighValVectorShiftInvert(const Eigen::SparseMatrix<double>& matrixA, const Eigen::SparseMatrix<double>& matrixB,
                                   double sigma, int nev,
                                   std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
-    if(matrixA.width() != matrixA.height()) return false;
-    if(matrixB.width() != matrixB.height()) return false;
-    if(matrixA.width() != matrixB.width())  return false;
-    const int n = (int)matrixA.width();
+    if(matrixA.rows() != matrixA.cols()) return false;
+    if(matrixB.rows() != matrixB.cols()) return false;
+    if(matrixA.rows() != matrixB.rows()) return false;
+    const int n = (int)matrixA.rows();
     if(n <= 2) return false;
 
-    Eigen::SparseMatrix<double> Ae = toEigen(matrixA, n);
-    Eigen::SparseMatrix<double> Be = toEigen(matrixB, n);
     Eigen::VectorXd vals;
     Eigen::MatrixXd vecs;
-    if(!shiftInvertCore(Ae, Be, sigma, nev, vals, vecs)) return false;
+    if(!shiftInvertCore(matrixA, matrixB, sigma, nev, vals, vecs)) return false;
     packResults(vals, vecs, n, eighValue, eigVector);
     return true;
 }
 
-bool MathEighValVectorShiftInvertGauged(MathMatrixSparse<double>& matrixA, MathMatrixSparse<double>& matrixB,
+bool MathEighValVectorShiftInvertGauged(const Eigen::SparseMatrix<double>& matrixA, const Eigen::SparseMatrix<double>& matrixB,
                                         const std::vector<std::pair<uint32_t, uint32_t> >& dofNodes,
                                         const std::vector<double>& dofLen,
                                         const std::vector<char>& interiorNode,
                                         uint32_t nNodes, double penaltyS, double sigma, int nev,
                                         std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
-    if(matrixA.width() != matrixA.height()) return false;
-    if(matrixB.width() != matrixB.height()) return false;
-    if(matrixA.width() != matrixB.width())  return false;
-    const int n = (int)matrixA.width();
+    if(matrixA.rows() != matrixA.cols()) return false;
+    if(matrixB.rows() != matrixB.cols()) return false;
+    if(matrixA.rows() != matrixB.rows()) return false;
+    const int n = (int)matrixA.rows();
     if(n <= 2 || (int)dofNodes.size() != n || (int)dofLen.size() != n || nNodes == 0) return false;
     if((uint32_t)interiorNode.size() != nNodes) return false;
 
-    Eigen::SparseMatrix<double> Ae = toEigen(matrixA, n);   /* stiffness S */
-    Eigen::SparseMatrix<double> Be = toEigen(matrixB, n);   /* mass T      */
+    const Eigen::SparseMatrix<double>& Ae = matrixA;   /* stiffness S */
+    const Eigen::SparseMatrix<double>& Be = matrixB;   /* mass T      */
 
     /* Discrete gradient G (n edges x nNodes). For this len*Whitney basis the DOF
      * coefficient of grad(phi) on edge (tail a -> head b) is (phi_b - phi_a)/len,

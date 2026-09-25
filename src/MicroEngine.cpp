@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cmath>
 #include <vector>
+#include <Eigen/SparseCore>
+#include <Eigen/Dense>
 
 bool findEdge(std::vector<GlobalTableElement>& table, MicroEdge& edge, uint32_t& getNumEdge)
 {
@@ -260,8 +262,8 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
 {
     ListMicroTetraedr::iterator itTet, itTetBegin, itTetEnd;
     uint32_t i, j;
-    /* для получения локальной матрицы */
-    MathMatrix<double> localMatrixT, localMatrixR;
+    /* local element matrices (6 edges x 6 edges) */
+    Eigen::Matrix<double, 6, 6> localMatrixT, localMatrixR;
     std::set<uint32_t> indexes;
     MicroEdge localEdge;
     std::vector<uint32_t> validIndexes;
@@ -271,14 +273,12 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     uint32_t indexI, indexJ;
     /* для работы с глобальной матрицей */
     uint32_t globalIndex;
-    MathMatrixSparse<double> globalMatrixT, globalMatrixR;
-    double valueElementT, valueElementR;
     double sign, signLine;
+    std::vector<Eigen::Triplet<double> > tripT, tripR;
 
-    /* Заполнение глобальной матрицы */
+    /* Assemble the global stiffness (T) and mass (R) directly as Eigen sparse
+     * triplets; setFromTriplets sums duplicate (row,col) contributions. */
     grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
-    globalMatrixT.setSize(0, 0);
-    globalMatrixR.setSize(0, 0);
     globalIndex = 0;
     for(itTet = itTetBegin; itTet != itTetEnd; itTet++)     /* проход по всем тетраэдрам */
     {
@@ -321,23 +321,19 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
                 numElement = globalTable[indexJ].getNumElement();
                 if(globalTable[indexJ].isFlags(EDGE_REVERSE)) sign = -1.0;
                 else sign = 1.0;
-                if(globalTable[indexI].isFlags(EDGE_FREE) || globalTable[indexJ].isFlags(EDGE_FREE))
-                {
-                    valueElementT = 0;
-                    valueElementR = 0;
-                }
-                else
-                {
-                    valueElementT = globalMatrixT.element(numElement, numLine);
-                    valueElementR = globalMatrixR.element(numElement, numLine);
-                }
-                globalMatrixT.setElementExt(numElement, numLine, valueElementT + localMatrixT.element(validIndexes[j], validIndexes[i])*sign*signLine);
-                globalMatrixR.setElementExt(numElement, numLine, valueElementR + localMatrixR.element(validIndexes[j], validIndexes[i])*sign*signLine);
+                tripT.emplace_back((int)numLine, (int)numElement,
+                                   localMatrixT(validIndexes[i], validIndexes[j]) * sign * signLine);
+                tripR.emplace_back((int)numLine, (int)numElement,
+                                   localMatrixR(validIndexes[i], validIndexes[j]) * sign * signLine);
             }
         }
 
     }
-    widthGlobalMatrix = globalMatrixT.width();
+    widthGlobalMatrix = globalIndex;
+    Eigen::SparseMatrix<double> globalMatrixT((int)globalIndex, (int)globalIndex);
+    Eigen::SparseMatrix<double> globalMatrixR((int)globalIndex, (int)globalIndex);
+    globalMatrixT.setFromTriplets(tripT.begin(), tripT.end());
+    globalMatrixR.setFromTriplets(tripR.begin(), tripR.end());
 
     /* For the grad-div (mass-metric) penalty, extract the discrete gradient G:
      * the reference-orientation node serials of each free DOF, taken from the
@@ -365,9 +361,7 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
         for(itn = itnBegin; itn != itnEnd; ++itn)
             if(itn->isFlags(NODE_IS_METALL))
                 interiorNode[itn->getSerialNumber()] = 0;
-        double meanDiag = 0.0;
-        for(uint32_t d = 0; d < widthGlobalMatrix; d++) meanDiag += globalMatrixT.element(d, d);
-        meanDiag /= (double)widthGlobalMatrix;
+        double meanDiag = globalMatrixT.diagonal().sum() / (double)widthGlobalMatrix;
         penaltyS = penaltyFactor * meanDiag;   /* lifts null-space modes to ~penaltyS */
     }
 
@@ -393,8 +387,6 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     }
     else
     {
-        globalMatrixT.clear();
-        globalMatrixR.clear();
         /* заполнение таблицы весовых коэффициентов */
         calculateBasisKoef(0);
     }
@@ -429,16 +421,15 @@ bool MicroEngine::getEighValues(std::vector<double> &eighValues)
     return true;
 }
 
-void MicroEngine::getLocalMatrixResonator(MathMatrix<double> &localMatrixT,
-                                          MathMatrix<double> &localMatrixR,
+void MicroEngine::getLocalMatrixResonator(Eigen::Matrix<double, 6, 6> &localMatrixT,
+                                          Eigen::Matrix<double, 6, 6> &localMatrixR,
                                           MicroTetraedr &tetraedr,
                                           double epsilon,
                                           std::set<uint32_t> &indexNullElements)
 {
-    /* TODO: в классе MathMatrix сначала идет столбец, потом строка */
     uint32_t i, j;
-    /* для коэффициенты барицентрических функций */
-    MathMatrix<double> matrix(4, 4);
+    /* barycentric-function coefficients */
+    Eigen::Matrix4d matrix;
     double b[4], c[4], d[4];
     /* для вычисления вспомогательных величин */
     MathVector3D addV[4][4];
@@ -461,20 +452,19 @@ void MicroEngine::getLocalMatrixResonator(MathMatrix<double> &localMatrixT,
     /* вычисление барицентрических коэффициентов */
     for(i=0; i<4; i++)
     {
-        matrix.element(i, 0) = tetraedr.nodes(i)->point().getX();
-        matrix.element(i, 1) = tetraedr.nodes(i)->point().getY();
-        matrix.element(i, 2) = tetraedr.nodes(i)->point().getZ();
-        matrix.element(i, 3) = 1.0;
+        matrix(0, i) = tetraedr.nodes(i)->point().getX();
+        matrix(1, i) = tetraedr.nodes(i)->point().getY();
+        matrix(2, i) = tetraedr.nodes(i)->point().getZ();
+        matrix(3, i) = 1.0;
     }
     volumeTetraedr = fabs(matrix.determinant())/6.0;
-    matrix = matrix.inverseMatrix();
+    Eigen::Matrix4d minv = matrix.inverse();
     for(i=0; i<4; i++)
     {
-        b[i] = matrix.element(0, i);
-        c[i] = matrix.element(1, i);
-        d[i] = matrix.element(2, i);
+        b[i] = minv(i, 0);
+        c[i] = minv(i, 1);
+        d[i] = minv(i, 2);
     }
-    matrix.clear();
     /* вычисление дополнительных величин */
     for(i=0; i<4; i++)
         for(j=0; j<4; j++)
@@ -485,8 +475,8 @@ void MicroEngine::getLocalMatrixResonator(MathMatrix<double> &localMatrixT,
         }
     for(i=0; i<4; i++) matrixC[i][i] = matrixC[i][i]*2.0;
     /* вычисление интегралов и элементов матрицы */
-    localMatrixT.setSize(6, 6);
-    localMatrixR.setSize(6, 6);
+    localMatrixT.setZero();
+    localMatrixR.setZero();
     for(i=0; i<6; i++)
     {
         if(indexNullElements.find(i) != indexNullElements.end()) continue;
@@ -500,9 +490,8 @@ void MicroEngine::getLocalMatrixResonator(MathMatrix<double> &localMatrixT,
             integralD = 4.0*volumeTetraedr*(tetraedr.getEdge(i).lenEdge())*(tetraedr.getEdge(j).lenEdge()) * (addV[m1][m2]*addV[n1][n2]);
             integralG = volumeTetraedr*(tetraedr.getEdge(i).lenEdge())*(tetraedr.getEdge(j).lenEdge())*
                     (addPhi[m2][n2]*matrixC[m1][n1] - addPhi[m2][n1]*matrixC[m1][n2] - addPhi[m1][n2]*matrixC[m2][n1] + addPhi[m1][n1]*matrixC[m2][n2]);
-            integralG = integralG;
-            localMatrixT.element(j, i) = integralD;
-            localMatrixR.element(j, i) = epsilon*integralG;
+            localMatrixT(i, j) = integralD;
+            localMatrixR(i, j) = epsilon*integralG;
         }
     }
 }
