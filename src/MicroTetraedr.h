@@ -10,10 +10,7 @@
 #include <list>
 #include <vector>
 
-#define EPSILON_RAD_QUAD (0.0000000001) /* погрешность вычисления сферы */
-#define CALC_SPHERE_METHOD_SLAU         /* метод вычисления уравнения описанной сферы */
-
-/* Класс, хранящий информацию о ребре тетраэдра */
+/* An edge of a tetrahedron (an ordered pair of node iterators). */
 class MicroEdge
 {
 public:
@@ -23,12 +20,10 @@ public:
     void                            setNode2(const std::list<MicroNode>::iterator& node2);
     std::list<MicroNode>::iterator  getNode1();
     std::list<MicroNode>::iterator  getNode2();
-    /* Возвращает true, если два ребра опираются на одинаковый узлы */
+    /* True if the two edges share the same node pair (either orientation). */
     bool                            operator==(const MicroEdge& edge);
-    /* Возвращает true, если два ребра опираются на одинаковые узлы крест-накрест;
-       предварительно нужно проверить равны ли ребра вообще */
+    /* True if the two edges are the same pair but opposite orientation. */
     bool                            isReverse(const MicroEdge& edge);
-    /* Замена номеров узлов */
     void                            reverseEdge();
     double                          lenEdge();
     bool                            isFlags(uint32_t flags);
@@ -38,109 +33,49 @@ private:
 };
 
 class MicroTetraedr;
-/* Контейнер для тетраэдров */
+/* Container of tetrahedra. */
 class ListMicroTetraedr:public std::list<MicroTetraedr>
 {
 public:
     ListMicroTetraedr();
-    /* поиск тетраэдра, в который попала точка */
-    bool findTetraedr(MathPoint3D &point, ListMicroTetraedr::iterator &it);
 };
 
-/* Структура для хранения тетраэдра и информации о смежных тетраэдрах */
+/* A tetrahedron: 4 node iterators, 4 neighbour links, per-surface flags, and the
+ * edge-element (Whitney) FEM helpers. */
 class MicroTetraedr
 {
 public:
     MicroTetraedr();
     std::list<MicroNode>::iterator& nodes(uint32_t i);
     ListMicroTetraedr::iterator&    tetraedrs(uint32_t i);
-    void                            clearTetraedrs();
-    /* Принадлежит ли точка тетраэдру? */
-    bool                            isInTetraedr(const MathPoint3D &point);
-    /* Принадлежит ли точка той половине пространства, где находится тетраэдр, отн. грани numSurface */
-    bool                            isInTetraedr(const MathPoint3D &point, uint32_t numSurface);
-    /* Принадлежит ли точка узлу плоскости (треугольнику)? */
-    bool                            isPointInSurface(const MathPoint3D &point, uint32_t numSurface);
-    /* Принадлежит ли ребро границе плоскости (треугольнику)? */
-    bool                            isEdgeInSurface(const MathPoint3D &point1, const MathPoint3D &point2, uint32_t numSurface);
-    /* Являются ли точка узлом тетраэдра? */
-    bool                            isNodeTetraedr(const MathPoint3D &point);
-    /* Являются ли 3 точки узлами тетраэдра? */
-    bool                            isNode3Tetraedr(const MathPoint3D &point1, const MathPoint3D &point2, const MathPoint3D &point3);
-    /* Получение номера плоскости по трем точкам */
-    bool                            getNumSurface(const MathPoint3D &point1, const MathPoint3D &point2, const MathPoint3D &point3, uint32_t& getNum);
-    /* Получение номера плоскости по итератору на соседний тетраэдр */
-    bool                            getNumSurface(ListMicroTetraedr::iterator it, uint32_t& getNum);
-    /* Получение количества свободных граней */
-    uint32_t                        getCountEmptyNeighbours();
-    /* Сфера, описанная вокруг тетраэдра */
-    void                            makeCircumSphere();
-    /* Возвращает центр описанной сферы */
-    MathPoint3D                     pointCenterSphere();
-    /* Определение граничных граней - вызывать только после полного заполнения тетраэдра */
+    /* Mark boundary surfaces (no neighbour); call after the tet is fully built. */
     void                            calculateBoundariesSurface();
     bool                            isBoundarySurface(uint32_t index);
-    /* Флаги */
+    /* Per-surface flags. */
     bool                            isFlags(uint32_t numSurface, uint32_t flags);
     void                            addFlags(uint32_t numSurface, uint32_t flags);
     void                            clearFlags(uint32_t numSurface, uint32_t flags);
-    /* Точка входит в сферу? */
-    bool                            isInSphere(const MathPoint3D &point);
-    /* Объем тетраэдра */
     double                          volume();
-    /* Задание номера тетраэдра */
     void                            setSerialNumber(uint32_t number);
     uint32_t                        getSerialNumber();
-                            /* Функции для МКЭ */
-    /* Получение ребра тетраэдра по номеру  */
+    /* Edge enumeration (6 edges) for FEM assembly. */
     uint32_t                        getNumBeginEdge(uint32_t numEdge);
     uint32_t                        getNumEndEdge(uint32_t numEdge);
     MicroEdge                       getEdge(uint32_t numEdge);
-    uint32_t                        getNumEdgeFromSurface(uint32_t numSurface, uint32_t numEdge);
-    uint32_t                        getNumPointFromSurface(uint32_t numSurface, uint32_t numPoint);
-    /* Вычислить значение базисной функции numFunc в точке point */
+    /* Value of Whitney basis function numEdge at a point. */
     MathVector3D                    getValueBasisFunc(const MathPoint3D& point, uint32_t numEdge);
-    /* Получить вектор, нормальный к поверхности numSurface */
-    MathVector3D                    getNormVector(uint32_t numSurface);
 
 private:
     std::list<MicroNode>::iterator      _nodes[4];
     ListMicroTetraedr::iterator         _tetraedrs[4];
     uint32_t                            _flags[4];
-    MathPoint3D                         _pointCenterSphere;
-    double                              _radSphereQuad;
     uint32_t                            _serialNumber;
 };
 
-class MicroTriangle
-{
-public:
-    MicroTriangle(std::list<MicroNode>::iterator node1, std::list<MicroNode>::iterator node2, std::list<MicroNode>::iterator node3);
-    std::list<MicroNode>::iterator   node(uint32_t index);
-    bool                             isNodeTriangle(MathPoint3D &point);
-    bool                             operator==(const MicroTriangle& triangle);
-private:
-    std::list<MicroNode>::iterator   _nodes[3];
-};
-
-/* Получение пустого итератора */
+/* An "empty" tetrahedron iterator sentinel (used for missing neighbours). */
 ListMicroTetraedr::iterator EmptyIterator();
 
-/* Два тетраэдра совмещены? */
-bool IsSharedTetraedrs(MicroTetraedr& tetraedr1, MicroTetraedr& tetraedr2);
-
-/* Два тетраэдра пересекаются? */
-bool IsCrossingTetraedrs(MicroTetraedr& tetraedr1, MicroTetraedr& tetraedr2);
-
-/* Тетраэдры удовлетворяют условию Делоне? */
-bool IsDeloneTetraedrs(ListMicroTetraedr::iterator &tetraedr1, ListMicroTetraedr::iterator &tetraedr2);
-
-/* Тетраэдр удовлетворяют условию Делоне по отношению к соседям? */
-bool IsDeloneTetraedr(ListMicroTetraedr::iterator &tetraedr);
-
-/* Тетраэдр вырожден, epsilonVolume - минимальный объем */
-bool IsSingularTetraedr(MathPoint3D &point1, MathPoint3D &point2, MathPoint3D &point3, MathPoint3D &point4, double epsilonVolume);
-
+/* Signed-magnitude volume of a tetrahedron. */
 double VolumeTetraedr(MathPoint3D &point1, MathPoint3D &point2, MathPoint3D &point3, MathPoint3D &point4);
 
 #endif // MICROTETRAEDR_H
