@@ -75,10 +75,12 @@ MainDialog::MainDialog()
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
 
-    solidsCheck = new QCheckBox("Solids"); solidsCheck->setChecked(true);
-    fieldsCheck = new QCheckBox("Fields"); fieldsCheck->setChecked(true);
-    meshCheck   = new QCheckBox("Mesh");   meshCheck->setChecked(false);
+    solidsCheck = new QCheckBox("Solids");  solidsCheck->setChecked(true);
+    fieldsCheck = new QCheckBox("Fields");  fieldsCheck->setChecked(true);
+    meshCheck   = new QCheckBox("Mesh");    meshCheck->setChecked(false);
+    mesh3dCheck = new QCheckBox("3D mesh"); mesh3dCheck->setChecked(false);
 
+    buildMeshButton = new QPushButton("Build mesh");
     computeButton   = new QPushButton("Compute modes");
     saveImageButton = new QPushButton("Save image");
     resultsList = new QListWidget();
@@ -99,6 +101,7 @@ MainDialog::MainDialog()
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
     controls->addLayout(solveForm);
+    controls->addWidget(buildMeshButton);
     controls->addWidget(computeButton);
     QLabel* unitsNote = new QLabel(
         "Lengths in metres · frequencies in MHz · field |E| in\n"
@@ -114,6 +117,7 @@ MainDialog::MainDialog()
     layerRow->addWidget(solidsCheck);
     layerRow->addWidget(fieldsCheck);
     layerRow->addWidget(meshCheck);
+    layerRow->addWidget(mesh3dCheck);
     layerRow->addStretch(1);
     layerRow->addWidget(saveImageButton);
 
@@ -129,11 +133,13 @@ MainDialog::MainDialog()
 
     connect(cavityCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(cavityChanged()));
     connect(coreCombo,   SIGNAL(currentIndexChanged(int)), this, SLOT(coreChanged()));
+    connect(buildMeshButton, SIGNAL(clicked()), this, SLOT(buildMeshSlot()));
     connect(computeButton,   SIGNAL(clicked()), this, SLOT(computeSlot()));
     connect(saveImageButton, SIGNAL(clicked()), this, SLOT(saveImageSlot()));
     connect(solidsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(fieldsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(meshCheck,   SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
+    connect(mesh3dCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(resultsList, SIGNAL(currentRowChanged(int)), this, SLOT(modeSelected(int)));
 
     cavityChanged();
@@ -193,6 +199,28 @@ void MainDialog::layerToggled()
     view->setLayerVisible(ResonatorView::SOLIDS, solidsCheck->isChecked());
     view->setLayerVisible(ResonatorView::FIELDS, fieldsCheck->isChecked());
     view->setLayerVisible(ResonatorView::MESH,   meshCheck->isChecked());
+    view->setLayerVisible(ResonatorView::MESH3D, mesh3dCheck->isChecked());
+}
+
+void MainDialog::buildMeshSlot()
+{
+    buildMeshButton->setEnabled(false);
+    resultsList->clear();
+    view->clearField();
+    ResonatorSpec spec = readSpec();
+
+    log("Meshing (Gmsh/OpenCASCADE)...");
+    std::string err;
+    if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
+        log("Mesh FAILED: " + QString::fromStdString(err));
+        buildMeshButton->setEnabled(true);
+        return;
+    }
+    log(QString("Mesh: %1 nodes, %2 tets").arg(mesh.nodes.size()).arg(mesh.tets.size()));
+    view->setMesh(mesh);
+    layerToggled();
+    log("Mesh built — press Compute modes to solve.");
+    buildMeshButton->setEnabled(true);
 }
 
 void MainDialog::showModeField(int internalIndex)
@@ -273,6 +301,11 @@ void MainDialog::autoRun()
     if (const char* c = std::getenv("RESONATOR_CAV"))  cavityCombo->setCurrentIndex(std::atoi(c));
     if (const char* c = std::getenv("RESONATOR_CORE")) coreCombo->setCurrentIndex(std::atoi(c));
     computeSlot();
+    if (std::getenv("RESONATOR_MESH3D")) {   /* test: show only the 3D mesh layer */
+        solidsCheck->setChecked(false);
+        fieldsCheck->setChecked(false);
+        mesh3dCheck->setChecked(true);
+    }
     if (const char* shot = std::getenv("RESONATOR_SHOT")) {
         view->grabFramebuffer().save(QString(shot));
         this->grab().save(QString(shot) + ".ui.png");   /* full window (controls) */

@@ -1,6 +1,7 @@
 #include "MicroEngine.h"
 #include <stdio.h>
 #include <cstdint>
+#include <cmath>
 #include <vector>
 
 /* вычисление C для абсорбционных условий */
@@ -367,6 +368,16 @@ bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &po
     grid.getIteratorTetraedrs(itBegin, itEnd);
     for(it = itBegin; it != itEnd; ++it)
     {
+        /* Skip low-quality (sliver) tetrahedra: the Whitney-basis field there
+         * scales like 1/volume and produces non-physical spikes. Shape quality
+         * q = V / Lrms^3 normalised so a regular tet = 1; drop q < 0.1. */
+        double vol = fabs(it->volume());
+        double sumL2 = 0.0;
+        for(i = 0; i < 6; i++) { double l = it->getEdge(i).lenEdge(); sumL2 += l * l; }
+        double lrms3 = pow(sumL2 / 6.0, 1.5);
+        double quality = (lrms3 > 0.0) ? (vol / lrms3 / 0.117851) : 0.0;
+        if(quality < 0.1) continue;
+
         MathPoint3D c((it->nodes(0)->point().getX() + it->nodes(1)->point().getX() +
                        it->nodes(2)->point().getX() + it->nodes(3)->point().getX()) / 4.0,
                       (it->nodes(0)->point().getY() + it->nodes(1)->point().getY() +

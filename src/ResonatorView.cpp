@@ -43,6 +43,7 @@ void ResonatorView::setMesh(const FemMesh& mesh)
 {
     if (solidsActor) renderer->RemoveActor(solidsActor);
     if (meshActor)   renderer->RemoveActor(meshActor);
+    if (mesh3dActor) renderer->RemoveActor(mesh3dActor);
     clearField();
 
     vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
@@ -90,6 +91,19 @@ void ResonatorView::setMesh(const FemMesh& mesh)
     meshActor->GetProperty()->SetLineWidth(0.5);
     meshActor->SetVisibility(false);   /* mesh layer off by default */
     renderer->AddActor(meshActor);
+
+    /* 3D mesh: shaded exterior surface with visible cell edges (solid look). */
+    vtkSmartPointer<vtkDataSetMapper> m3 = vtkSmartPointer<vtkDataSetMapper>::New();
+    m3->SetInputData(ug);
+    m3->ScalarVisibilityOff();
+    mesh3dActor = vtkSmartPointer<vtkActor>::New();
+    mesh3dActor->SetMapper(m3);
+    mesh3dActor->GetProperty()->SetRepresentationToSurface();
+    mesh3dActor->GetProperty()->EdgeVisibilityOn();
+    mesh3dActor->GetProperty()->SetColor(0.80, 0.82, 0.86);
+    mesh3dActor->GetProperty()->SetEdgeColor(0.20, 0.30, 0.20);
+    mesh3dActor->SetVisibility(false);   /* off by default */
+    renderer->AddActor(mesh3dActor);
 
     resetView();
 }
@@ -176,6 +190,7 @@ void ResonatorView::setLayerVisible(Layer layer, bool visible)
     switch (layer) {
     case SOLIDS: if (solidsActor) solidsActor->SetVisibility(visible); break;
     case MESH:   if (meshActor)   meshActor->SetVisibility(visible);   break;
+    case MESH3D: if (mesh3dActor) mesh3dActor->SetVisibility(visible); break;
     case FIELDS:
         if (fieldsActor) fieldsActor->SetVisibility(visible);
         scalarBar->SetVisibility(visible && fieldsActor != nullptr);

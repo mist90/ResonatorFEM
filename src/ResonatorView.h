@@ -15,12 +15,13 @@
  *             semi-transparent so the interior is visible
  *   MESH    - the tetrahedral mesh as a wireframe
  *   FIELDS  - the computed mode field as arrow glyphs coloured by magnitude
+ *   MESH3D  - the mesh as shaded surfaces with visible edges (solid 3D look)
  */
 class ResonatorView : public QVTKOpenGLNativeWidget
 {
     Q_OBJECT
 public:
-    enum Layer { SOLIDS = 0, MESH = 1, FIELDS = 2 };
+    enum Layer { SOLIDS = 0, MESH = 1, FIELDS = 2, MESH3D = 3 };
 
     explicit ResonatorView(QWidget* parent = nullptr);
 
@@ -38,6 +39,7 @@ private:
     vtkSmartPointer<vtkRenderer>        renderer;
     vtkSmartPointer<vtkActor>           solidsActor;
     vtkSmartPointer<vtkActor>           meshActor;
+    vtkSmartPointer<vtkActor>           mesh3dActor;
     vtkSmartPointer<vtkActor>           fieldsActor;
     vtkSmartPointer<vtkScalarBarActor>  scalarBar;
     double modelDiagonal;   /* for glyph scaling */

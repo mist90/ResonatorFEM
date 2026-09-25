@@ -37,8 +37,8 @@ private:
     QGroupBox   *cavCylBox, *cavBoxBox, *coreCylBox, *coreBoxBox, *coreSpiralBox;
 
     QLineEdit   *meshSizeEdit, *numModesEdit, *penaltyEdit;
-    QCheckBox   *solidsCheck, *fieldsCheck, *meshCheck;
-    QPushButton *computeButton, *saveImageButton;
+    QCheckBox   *solidsCheck, *fieldsCheck, *meshCheck, *mesh3dCheck;
+    QPushButton *buildMeshButton, *computeButton, *saveImageButton;
     QListWidget *resultsList;
     QTextEdit   *console;
 
@@ -47,6 +47,7 @@ private:
     void          showModeField(int internalIndex);
 
 private slots:
+    void buildMeshSlot();
     void computeSlot();
     void cavityChanged();
     void coreChanged();
