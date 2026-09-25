@@ -7,7 +7,6 @@
 #include <QObject>
 #include "MicroGrid.h"
 #include "MicroNode.h"
-#include "MathComplex.h"
 #include "MathEighValues.h"
 #include "FemMesh.h"
 #include <Eigen/Core>
@@ -92,7 +91,7 @@ private:
     std::vector<double>               eighValue;
     uint32_t                          widthGlobalMatrix;
     std::vector<MicroEdge>            tableMetallEdges;
-    std::vector<MathComplex<double> > basisKoef;
+    std::vector<double> basisKoef;   /* real edge weights of the current mode */
     /* Eigensolver target: solveSigmaK2 >= 0 => sparse shift-invert, else dense. */
     double          solveSigmaK2;
     int             solveNev;

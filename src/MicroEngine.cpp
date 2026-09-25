@@ -221,7 +221,7 @@ bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &po
                        it->nodes(2)->point().getZ() + it->nodes(3)->point().getZ()) / 4.0);
         MathVector3D f(0.0, 0.0, 0.0);
         for(i = 0; i < 6; i++)
-            f = f + it->getValueBasisFunc(c, i) * basisKoef[6 * it->getSerialNumber() + i].re();
+            f = f + it->getValueBasisFunc(c, i) * basisKoef[6 * it->getSerialNumber() + i];
         points.push_back({ c.getX(), c.getY(), c.getZ() });
         vectors.push_back({ f.getX(), f.getY(), f.getZ() });
     }
@@ -400,7 +400,7 @@ bool MicroEngine::calculateBasisKoef(uint32_t numEighVal)
     if(!resonatorModeEnabled) return false;
     if(rootsGlobalMatrix.size() == 0) return false;
     if(numEighVal >= eighValue.size()) return false;
-    basisKoef.resize(globalTable.size(), MathComplex<double>(0.0, 0.0));
+    basisKoef.resize(globalTable.size(), 0.0);
     for(i=0; i<globalTable.size(); i++)
     {
         if(globalTable[i].isFlags(EDGE_NULL)) basisKoef[i] = 0;

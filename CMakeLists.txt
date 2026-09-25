@@ -25,7 +25,6 @@ add_library(resonator_core STATIC
   src/MicroGrid.cpp
   src/MicroEngine.cpp
   src/MathVector3D.cpp
-  src/MathComplex.cpp
   src/MathEighValues.cpp
   src/CsgGmshMesher.cpp
 )
