@@ -361,8 +361,17 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
         for(itn = itnBegin; itn != itnEnd; ++itn)
             if(itn->isFlags(NODE_IS_METALL))
                 interiorNode[itn->getSerialNumber()] = 0;
-        double meanDiag = globalMatrixT.diagonal().sum() / (double)widthGlobalMatrix;
-        penaltyS = penaltyFactor * meanDiag;   /* lifts null-space modes to ~penaltyS */
+        /* Penalty magnitude must scale like an eigenvalue k^2 = xᵀSx/xᵀRx, i.e.
+         * like S/R — NOT like S alone. meanDiag(S) by itself scales as the
+         * stiffness (∝ length with the length-scaled Whitney basis), while k^2
+         * scales as 1/length^2, so a factor tuned at metre scale collapsed by
+         * ~1/length^3 on millimetre geometries and stopped lifting the gradient
+         * null space (physical modes then hid behind un-lifted spurious modes).
+         * Normalising by meanDiag(R) makes penaltyS ~ mean(k^2), scale-invariant. */
+        double meanDiagS = globalMatrixT.diagonal().sum() / (double)widthGlobalMatrix;
+        double meanDiagR = globalMatrixR.diagonal().sum() / (double)widthGlobalMatrix;
+        double k2Scale   = (meanDiagR > 0.0) ? meanDiagS / meanDiagR : meanDiagS;
+        penaltyS = penaltyFactor * k2Scale;    /* lifts null-space modes to ~penaltyS (in k^2 units) */
     }
 
     /* освобождение памяти */

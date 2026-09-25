@@ -10,3 +10,6 @@ ResonatorFEM
 # Logs & scratch
 *.log
 eighval.txt
+
+# stray screenshots / debug images
+/*.png
