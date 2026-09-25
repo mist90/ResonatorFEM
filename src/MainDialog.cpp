@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QDoubleValidator>
 #include <QIntValidator>
+#include <QLocale>
 #include <QFileDialog>
 #include <QListWidgetItem>
 #include <QTimer>
@@ -21,7 +22,13 @@ static const double C_LIGHT = 299792458.0;   /* m/s */
 static QLineEdit* field(const QString& val)
 {
     QLineEdit* e = new QLineEdit(val);
-    e->setValidator(new QDoubleValidator(0.0, 1e9, 6));
+    QDoubleValidator* v = new QDoubleValidator(0.0, 1e9, 6, e);
+    /* Force '.' as the decimal separator regardless of system locale, and plain
+     * (non-scientific) notation. Otherwise on locales that use ',' the validator
+     * rejects '.' and the fields feel un-editable. */
+    v->setNotation(QDoubleValidator::StandardNotation);
+    v->setLocale(QLocale::c());
+    e->setValidator(v);
     return e;
 }
 
@@ -39,30 +46,30 @@ MainDialog::MainDialog()
     cavRadiusEdit = field("1.0"); cavHeightEdit = field("2.0");
     cavCylBox = new QGroupBox("Cylinder cavity");
     { QFormLayout* f = new QFormLayout(cavCylBox);
-      f->addRow("radius", cavRadiusEdit); f->addRow("height", cavHeightEdit); }
+      f->addRow("radius (m)", cavRadiusEdit); f->addRow("height (m)", cavHeightEdit); }
 
     cavAEdit = field("1.0"); cavBEdit = field("0.8"); cavDEdit = field("1.5");
     cavBoxBox = new QGroupBox("Box cavity");
     { QFormLayout* f = new QFormLayout(cavBoxBox);
-      f->addRow("a (x)", cavAEdit); f->addRow("b (y)", cavBEdit); f->addRow("d (z)", cavDEdit); }
+      f->addRow("a — x (m)", cavAEdit); f->addRow("b — y (m)", cavBEdit); f->addRow("d — z (m)", cavDEdit); }
 
     coreRadiusEdit = field("0.3"); coreHeightEdit = field("2.0");
     coreCylBox = new QGroupBox("Cylinder core");
     { QFormLayout* f = new QFormLayout(coreCylBox);
-      f->addRow("radius", coreRadiusEdit); f->addRow("height", coreHeightEdit); }
+      f->addRow("radius (m)", coreRadiusEdit); f->addRow("height (m)", coreHeightEdit); }
 
     coreAEdit = field("0.3"); coreBEdit = field("0.3"); coreDEdit = field("1.0");
     coreBoxBox = new QGroupBox("Box core");
     { QFormLayout* f = new QFormLayout(coreBoxBox);
-      f->addRow("a (x)", coreAEdit); f->addRow("b (y)", coreBEdit); f->addRow("d (z)", coreDEdit); }
+      f->addRow("a — x (m)", coreAEdit); f->addRow("b — y (m)", coreBEdit); f->addRow("d — z (m)", coreDEdit); }
 
     helixREdit = field("0.5"); pitchEdit = field("0.5"); turnsEdit = field("2.0");
     ellAEdit = field("0.12");  ellBEdit = field("0.12");
     coreSpiralBox = new QGroupBox("Spiral core (elliptical cross-section)");
     { QFormLayout* f = new QFormLayout(coreSpiralBox);
-      f->addRow("helix radius", helixREdit); f->addRow("pitch/turn", pitchEdit);
-      f->addRow("turns", turnsEdit); f->addRow("ellipse semi-axis (radial)", ellAEdit);
-      f->addRow("ellipse semi-axis (axial)", ellBEdit); }
+      f->addRow("helix radius (m)", helixREdit); f->addRow("pitch/turn (m)", pitchEdit);
+      f->addRow("turns (–)", turnsEdit); f->addRow("semi-axis radial (m)", ellAEdit);
+      f->addRow("semi-axis axial (m)", ellBEdit); }
 
     meshSizeEdit = field("0.2");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
@@ -88,11 +95,16 @@ MainDialog::MainDialog()
     controls->addWidget(coreBoxBox);
     controls->addWidget(coreSpiralBox);
     QFormLayout* solveForm = new QFormLayout();
-    solveForm->addRow("mesh size", meshSizeEdit);
+    solveForm->addRow("mesh size (m)", meshSizeEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
     controls->addLayout(solveForm);
     controls->addWidget(computeButton);
+    QLabel* unitsNote = new QLabel(
+        "Lengths in metres · frequencies in MHz · field |E| in\n"
+        "arbitrary units (an eigenmode is defined up to a scale).");
+    unitsNote->setStyleSheet("color: #555; font-size: 10px;");
+    controls->addWidget(unitsNote);
     controls->addWidget(new QLabel("Resonant frequencies (MHz):"));
     controls->addWidget(resultsList);
     controls->addWidget(console);
@@ -258,6 +270,8 @@ void MainDialog::saveImageSlot()
 
 void MainDialog::autoRun()
 {
+    if (const char* c = std::getenv("RESONATOR_CAV"))  cavityCombo->setCurrentIndex(std::atoi(c));
+    if (const char* c = std::getenv("RESONATOR_CORE")) coreCombo->setCurrentIndex(std::atoi(c));
     computeSlot();
     if (const char* shot = std::getenv("RESONATOR_SHOT")) {
         view->grabFramebuffer().save(QString(shot));

@@ -16,6 +16,8 @@
 #include <vtkGlyph3D.h>
 #include <vtkLookupTable.h>
 #include <cmath>
+#include <vector>
+#include <algorithm>
 
 ResonatorView::ResonatorView(QWidget* parent)
     : QVTKOpenGLNativeWidget(parent), modelDiagonal(1.0)
@@ -31,7 +33,7 @@ ResonatorView::ResonatorView(QWidget* parent)
     renWin->AddRenderer(renderer);
 
     scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
-    scalarBar->SetTitle("|field|");
+    scalarBar->SetTitle("|E| (a.u.)");
     scalarBar->SetNumberOfLabels(4);
     scalarBar->SetVisibility(false);
     renderer->AddActor2D(scalarBar);
@@ -98,21 +100,32 @@ void ResonatorView::setField(const std::vector<std::array<double, 3> >& points,
     clearField();
     if (points.empty() || points.size() != vectors.size()) return;
 
+    /* Magnitudes. A few tetrahedra near curved walls can be slivers, where the
+     * Whitney-basis field blows up (~1/volume). Use a robust reference scale
+     * (95th percentile) for colour and arrow size, and drop the wild outliers,
+     * so those bad elements don't dwarf the physical field. */
+    std::vector<double> mags(points.size());
+    for (size_t i = 0; i < points.size(); ++i)
+        mags[i] = std::sqrt(vectors[i][0]*vectors[i][0] + vectors[i][1]*vectors[i][1] +
+                            vectors[i][2]*vectors[i][2]);
+    std::vector<double> sorted(mags);
+    std::sort(sorted.begin(), sorted.end());
+    double robustMax = sorted[(size_t)(0.95 * (sorted.size() - 1))];
+    if (robustMax <= 0.0) robustMax = sorted.back();
+    if (robustMax <= 0.0) return;
+    const double outlierCut = 6.0 * robustMax;   /* drop clearly non-physical samples */
+
     vtkSmartPointer<vtkPoints>      p   = vtkSmartPointer<vtkPoints>::New();
     vtkSmartPointer<vtkDoubleArray> vec = vtkSmartPointer<vtkDoubleArray>::New();
     vtkSmartPointer<vtkDoubleArray> mag = vtkSmartPointer<vtkDoubleArray>::New();
     vec->SetNumberOfComponents(3); vec->SetName("field");
     mag->SetNumberOfComponents(1); mag->SetName("mag");
-    double maxMag = 0.0;
     for (size_t i = 0; i < points.size(); ++i) {
+        if (mags[i] > outlierCut) continue;
         p->InsertNextPoint(points[i][0], points[i][1], points[i][2]);
         vec->InsertNextTuple3(vectors[i][0], vectors[i][1], vectors[i][2]);
-        double m = std::sqrt(vectors[i][0]*vectors[i][0] + vectors[i][1]*vectors[i][1] +
-                             vectors[i][2]*vectors[i][2]);
-        mag->InsertNextValue(m);
-        maxMag = std::max(maxMag, m);
+        mag->InsertNextValue(mags[i]);
     }
-    if (maxMag <= 0.0) return;
 
     vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
     pd->SetPoints(p);
@@ -126,18 +139,22 @@ void ResonatorView::setField(const std::vector<std::array<double, 3> >& points,
     glyph->SetVectorModeToUseVector();
     glyph->SetScaleModeToScaleByVector();
     glyph->SetColorModeToColorByScalar();
-    glyph->SetScaleFactor(0.06 * modelDiagonal / maxMag);
+    /* Clamp the scaling to [0, robustMax] so arrows above the 95th percentile
+     * saturate at one size instead of dominating. */
+    glyph->ClampingOn();
+    glyph->SetRange(0.0, robustMax);
+    glyph->SetScaleFactor(0.06 * modelDiagonal);
     glyph->OrientOn();
 
     vtkSmartPointer<vtkLookupTable> lut = vtkSmartPointer<vtkLookupTable>::New();
     lut->SetHueRange(0.667, 0.0);   /* blue (low) -> red (high) */
-    lut->SetTableRange(0.0, maxMag);
+    lut->SetTableRange(0.0, robustMax);
     lut->Build();
 
     vtkSmartPointer<vtkPolyDataMapper> map = vtkSmartPointer<vtkPolyDataMapper>::New();
     map->SetInputConnection(glyph->GetOutputPort());
     map->SetLookupTable(lut);
-    map->SetScalarRange(0.0, maxMag);
+    map->SetScalarRange(0.0, robustMax);
 
     fieldsActor = vtkSmartPointer<vtkActor>::New();
     fieldsActor->SetMapper(map);
