@@ -55,24 +55,9 @@ bool MicroEdge::isReverse(const MicroEdge &edge)
     else return false;
 }
 
-void MicroEdge::reverseEdge()
-{
-    std::list<MicroNode>::iterator itTmp;
-
-    itTmp = _node1;
-    _node1 = _node2;
-    _node2 = itTmp;
-}
-
 double MicroEdge::lenEdge()
 {
     return LenPoints(_node1->point(), _node2->point());
-}
-
-bool MicroEdge::isFlags(uint32_t flags)
-{
-    if(_node1->isFlags(flags) && _node2->isFlags(flags)) return true;
-    else return false;
 }
 
 

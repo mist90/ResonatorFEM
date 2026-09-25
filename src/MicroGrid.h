@@ -21,7 +21,6 @@ public:
      * numbers, and compute boundary surfaces. Ready for FEM assembly after. */
     bool            loadTetraMesh(const FemMesh& mesh);
 
-    bool            linkNodes();
     bool            setNumberNodesTetraedrs();
     bool            getIteratorNodes(std::list<MicroNode>::iterator& itBegin, std::list<MicroNode>::iterator& itEnd);
     bool            getIteratorTetraedrs(ListMicroTetraedr::iterator& itBegin, ListMicroTetraedr::iterator& itEnd);

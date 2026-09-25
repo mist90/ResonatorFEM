@@ -24,9 +24,7 @@ public:
     bool                            operator==(const MicroEdge& edge);
     /* True if the two edges are the same pair but opposite orientation. */
     bool                            isReverse(const MicroEdge& edge);
-    void                            reverseEdge();
     double                          lenEdge();
-    bool                            isFlags(uint32_t flags);
 private:
     std::list<MicroNode>::iterator _node1;
     std::list<MicroNode>::iterator _node2;

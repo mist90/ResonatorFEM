@@ -15,37 +15,6 @@ MicroGrid::MicroGrid()
 }
 
 
-bool MicroGrid::linkNodes()
-{
-    ListMicroTetraedr::iterator itTetraedr;
-    std::list<MicroNode>::iterator itNode;
-    uint32_t i, j;
-
-    if(isLinkNodes) return true;
-    if(isClearTetraedrs) return false;
-    isLinkNodes = true;
-    isNumNodesTetraedrs = false;
-    /* связывание узлов */
-    for(itTetraedr=listTetraedr.begin(); itTetraedr!=listTetraedr.end(); itTetraedr++)
-        for(i=0; i<4; i++)
-            for(j=0; j<4; j++)
-            {
-                if(i == j) continue;
-                itTetraedr->nodes(i)->addNeighbourNode(itTetraedr->nodes(j));
-            }
-    /* удаление свободных узлов */
-    itNode = listNodes.begin();
-    while(itNode != listNodes.end())
-    {
-        if(!itNode->numNeighbourNodes())
-        {
-            itNode = listNodes.erase(itNode);
-        }
-        else itNode++;
-    }
-    return true;
-}
-
 bool MicroGrid::setNumberNodesTetraedrs()
 {
     std::list<MicroNode>::iterator itNode;
@@ -195,8 +164,7 @@ bool MicroGrid::loadTetraMesh(const FemMesh &mesh)
         for(int k = 0; k < 3; k++)
             nodeIt[f->first[k]]->addFlags(NODE_IS_BOUNDARY);
 
-    /* 5. Neighbour links (for GUI drawing) and sequential numbering. */
-    linkNodes();
+    /* 5. Sequential node/tetrahedron numbering. */
     setNumberNodesTetraedrs();
 
     /* 6. Mark boundary surfaces (needs NODE_IS_BOUNDARY set above). */
