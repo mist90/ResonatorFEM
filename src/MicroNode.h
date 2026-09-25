@@ -1,6 +1,6 @@
 #ifndef NODE_H
 #define NODE_H
-#include "MathPoint3D.h"
+#include "MathVector3D.h"
 #include <stdint.h>
 #include <list>
 
@@ -11,16 +11,16 @@ class MicroNode
 {
 public:
     MicroNode();
-    MicroNode(const MathPoint3D& point);
-    void            setPoint(const MathPoint3D& point);
-    MathPoint3D&    point();
+    MicroNode(const MathVector3D& point);
+    void            setPoint(const MathVector3D& point);
+    MathVector3D&    point();
     void            addFlags(uint32_t flags);
     void            clearFlags(uint32_t flags);
     bool            isFlags(uint32_t flags);
     uint32_t        getSerialNumber();
 
 private:
-    MathPoint3D     _point;
+    MathVector3D     _point;
     uint32_t        _flags;
     uint32_t        _serialNumber;
     friend class MicroGrid;   /* assigns _serialNumber in setNumberNodesTetraedrs */

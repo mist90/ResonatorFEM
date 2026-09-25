@@ -1,7 +1,7 @@
 #ifndef MICROTETRAEDR_H
 #define MICROTETRAEDR_H
 
-#include "MathPoint3D.h"
+#include "MathVector3D.h"
 #include "MathVector3D.h"
 #include "MicroNode.h"
 #include "MicroFlags.h"
@@ -60,7 +60,7 @@ public:
     uint32_t                        getNumEndEdge(uint32_t numEdge);
     MicroEdge                       getEdge(uint32_t numEdge);
     /* Value of Whitney basis function numEdge at a point. */
-    MathVector3D                    getValueBasisFunc(const MathPoint3D& point, uint32_t numEdge);
+    MathVector3D                    getValueBasisFunc(const MathVector3D& point, uint32_t numEdge);
 
 private:
     std::list<MicroNode>::iterator      _nodes[4];
@@ -73,6 +73,6 @@ private:
 ListMicroTetraedr::iterator EmptyIterator();
 
 /* Signed-magnitude volume of a tetrahedron. */
-double VolumeTetraedr(MathPoint3D &point1, MathPoint3D &point2, MathPoint3D &point3, MathPoint3D &point4);
+double VolumeTetraedr(MathVector3D &point1, MathVector3D &point2, MathVector3D &point3, MathVector3D &point4);
 
 #endif // MICROTETRAEDR_H

@@ -57,7 +57,7 @@ bool MicroEdge::isReverse(const MicroEdge &edge)
 
 double MicroEdge::lenEdge()
 {
-    return LenPoints(_node1->point(), _node2->point());
+    return (_node1->point() - _node2->point()).lenght();
 }
 
 
@@ -204,7 +204,7 @@ MicroEdge MicroTetraedr::getEdge(uint32_t numEdge)
     return edge;
 }
 
-MathVector3D MicroTetraedr::getValueBasisFunc(const MathPoint3D &point, uint32_t numEdge)
+MathVector3D MicroTetraedr::getValueBasisFunc(const MathVector3D &point, uint32_t numEdge)
 {
     Eigen::Matrix4d matrix;
     MathVector3D vector1, vector2, ret;
@@ -225,15 +225,14 @@ MathVector3D MicroTetraedr::getValueBasisFunc(const MathPoint3D &point, uint32_t
     c[0] = minv(mb, 1);  c[1] = minv(me, 1);
     d[0] = minv(mb, 2);  d[1] = minv(me, 2);
     vector1 = MathVector3D(b[1], c[1], d[1]);
-    vector1 = vector1*(a[0] + b[0]*((MathPoint3D)point).getX() + c[0]*((MathPoint3D)point).getY() + d[0]*((MathPoint3D)point).getZ());
+    vector1 = vector1*(a[0] + b[0]*((MathVector3D)point).getX() + c[0]*((MathVector3D)point).getY() + d[0]*((MathVector3D)point).getZ());
     vector2 = MathVector3D(b[0], c[0], d[0]);
-    vector2 = vector2*(a[1] + b[1]*((MathPoint3D)point).getX() + c[1]*((MathPoint3D)point).getY() + d[1]*((MathPoint3D)point).getZ());
+    vector2 = vector2*(a[1] + b[1]*((MathVector3D)point).getX() + c[1]*((MathVector3D)point).getY() + d[1]*((MathVector3D)point).getZ());
     ret = (vector1 - vector2)*getEdge(numEdge).lenEdge();
-    ret.setBegin(point);
     return ret;
 }
 
-double VolumeTetraedr(MathPoint3D &point1, MathPoint3D &point2, MathPoint3D &point3, MathPoint3D &point4)
+double VolumeTetraedr(MathVector3D &point1, MathVector3D &point2, MathVector3D &point3, MathVector3D &point4)
 {
     Eigen::Matrix3d m;
     m.row(0) << point2.getX() - point1.getX(), point2.getY() - point1.getY(), point2.getZ() - point1.getZ();

@@ -5,24 +5,24 @@ static std::list<MicroNode> emptyContainer;
 
 MicroNode::MicroNode()
 {
-    _point = MathPoint3D(0, 0, 0);
+    _point = MathVector3D(0, 0, 0);
     _flags = 0;
     _serialNumber = 0;
 }
 
-MicroNode::MicroNode(const MathPoint3D& point)
+MicroNode::MicroNode(const MathVector3D& point)
 {
     _point = point;
     _flags = 0;
     _serialNumber = 0;
 }
 
-void MicroNode::setPoint(const MathPoint3D& point)
+void MicroNode::setPoint(const MathVector3D& point)
 {
     _point = point;
 }
 
-MathPoint3D& MicroNode::point()
+MathVector3D& MicroNode::point()
 {
     return _point;
 }

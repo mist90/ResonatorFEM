@@ -24,7 +24,6 @@ add_library(resonator_core STATIC
   src/MicroTetraedr.cpp
   src/MicroGrid.cpp
   src/MicroEngine.cpp
-  src/MathPoint3D.cpp
   src/MathVector3D.cpp
   src/MathComplex.cpp
   src/MathEighValues.cpp

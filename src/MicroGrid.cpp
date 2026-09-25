@@ -85,7 +85,7 @@ bool MicroGrid::loadTetraMesh(const FemMesh &mesh)
     for(uint32_t i = 0; i < mesh.nodes.size(); i++)
     {
         MicroNode node;
-        node.setPoint(MathPoint3D(mesh.nodes[i][0], mesh.nodes[i][1], mesh.nodes[i][2]));
+        node.setPoint(MathVector3D(mesh.nodes[i][0], mesh.nodes[i][1], mesh.nodes[i][2]));
         listNodes.push_back(node);
         std::list<MicroNode>::iterator it = listNodes.end();
         --it;
@@ -101,8 +101,8 @@ bool MicroGrid::loadTetraMesh(const FemMesh &mesh)
     for(uint32_t i = 0; i < mesh.tets.size(); i++)
     {
         const std::array<uint32_t, 4> &t = mesh.tets[i];
-        MathPoint3D p0 = nodeIt[t[0]]->point(), p1 = nodeIt[t[1]]->point();
-        MathPoint3D p2 = nodeIt[t[2]]->point(), p3 = nodeIt[t[3]]->point();
+        MathVector3D p0 = nodeIt[t[0]]->point(), p1 = nodeIt[t[1]]->point();
+        MathVector3D p2 = nodeIt[t[2]]->point(), p3 = nodeIt[t[3]]->point();
         double v = fabs(VolumeTetraedr(p0, p1, p2, p3));
         if(v > maxVol) maxVol = v;
     }
@@ -116,8 +116,8 @@ bool MicroGrid::loadTetraMesh(const FemMesh &mesh)
     for(uint32_t i = 0; i < mesh.tets.size(); i++)
     {
         const std::array<uint32_t, 4> &t = mesh.tets[i];
-        MathPoint3D p0 = nodeIt[t[0]]->point(), p1 = nodeIt[t[1]]->point();
-        MathPoint3D p2 = nodeIt[t[2]]->point(), p3 = nodeIt[t[3]]->point();
+        MathVector3D p0 = nodeIt[t[0]]->point(), p1 = nodeIt[t[1]]->point();
+        MathVector3D p2 = nodeIt[t[2]]->point(), p3 = nodeIt[t[3]]->point();
         if(fabs(VolumeTetraedr(p0, p1, p2, p3)) <= volTol) { nDegenerate++; continue; }
         MicroTetraedr tet;
         for(uint32_t k = 0; k < 4; k++)

@@ -213,13 +213,13 @@ bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &po
         double quality = (lrms3 > 0.0) ? (vol / lrms3 / 0.117851) : 0.0;
         if(quality < 0.1) continue;
 
-        MathPoint3D c((it->nodes(0)->point().getX() + it->nodes(1)->point().getX() +
+        MathVector3D c((it->nodes(0)->point().getX() + it->nodes(1)->point().getX() +
                        it->nodes(2)->point().getX() + it->nodes(3)->point().getX()) / 4.0,
                       (it->nodes(0)->point().getY() + it->nodes(1)->point().getY() +
                        it->nodes(2)->point().getY() + it->nodes(3)->point().getY()) / 4.0,
                       (it->nodes(0)->point().getZ() + it->nodes(1)->point().getZ() +
                        it->nodes(2)->point().getZ() + it->nodes(3)->point().getZ()) / 4.0);
-        MathVector3D f(0.0, 0.0, 0.0, c);
+        MathVector3D f(0.0, 0.0, 0.0);
         for(i = 0; i < 6; i++)
             f = f + it->getValueBasisFunc(c, i) * basisKoef[6 * it->getSerialNumber() + i].re();
         points.push_back({ c.getX(), c.getY(), c.getZ() });
