@@ -18,21 +18,18 @@ find_library(LAPACK_LIB lapack REQUIRED)
 find_library(BLAS_LIB   blas   REQUIRED)
 
 # --- reusable core: FEM assembly + math + eigen-solve + mesh backend --------
-# Depends only on Qt Core (MicroEngine is a QThread/QObject); no GUI/GL.
+# Depends only on Qt Core (MicroEngine is a QObject); no GUI/GL.
 add_library(resonator_core STATIC
   src/MicroNode.cpp
   src/MicroTetraedr.cpp
   src/MicroGrid.cpp
   src/MicroEngine.cpp
-  src/MicroPort.cpp
   src/MathPoint3D.cpp
   src/MathVector3D.cpp
   src/MathComplex.cpp
   src/MathMatrix.cpp
   src/MathMatrixSparse.cpp
   src/MathEighValues.cpp
-  src/MathObject.cpp
-  src/MathGeomObjects.cpp
   src/CsgGmshMesher.cpp
 )
 target_include_directories(resonator_core PUBLIC

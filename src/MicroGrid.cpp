@@ -1,6 +1,4 @@
 #include "MicroGrid.h"
-#include "MathMatrix.h"
-#include "MathGeomObjects.h"
 #include <vector>
 #include <array>
 #include <map>

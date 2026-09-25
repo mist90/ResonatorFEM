@@ -3,11 +3,10 @@
 #include <vector>
 #include <array>
 #include <set>
-#include <QThread>
+#include <utility>
+#include <QObject>
 #include "MicroGrid.h"
 #include "MicroNode.h"
-#include "MathObject.h"
-#include "MicroPort.h"
 #include "MathMatrix.h"
 #include "MathMatrixSparse.h"
 #include "MathEighValues.h"
@@ -17,11 +16,7 @@
 #define EDGE_NULL           (0x2)
 #define EDGE_FREE           (0x4)
 
-#define ACTION_GENERATE     (0x1)
-#define ACTION_CALCULATE    (0x2)
-#define ACTION_DRAW         (0x3)
-
-/* элемент для таблицы связывания глобальной и локальных матриц */
+/* Links a tetrahedron's local edge to a global DOF in the assembled matrices. */
 class GlobalTableElement
 {
 public:
@@ -36,131 +31,76 @@ private:
     uint32_t    _flags;
 };
 
-class MicroEngine:public QThread
+/* Edge-element (Whitney) FEM solver for cavity resonator eigenmodes. Driven by an
+ * external conforming tetrahedral mesh (from Gmsh); graphics-free. */
+class MicroEngine : public QObject
 {
     Q_OBJECT
 public:
     MicroEngine();
     ~MicroEngine();
-    /* Mesh-driven resonator path (replaces genPoints for externally meshed
-     * geometry). generateFromMesh loads a conforming tet mesh and flags PEC
-     * boundaries; calculateSync runs the eigen-solve on the calling thread. */
+
+    /* Load a conforming tet mesh and flag every exterior (PEC) boundary. */
     bool            generateFromMesh(const FemMesh& mesh);
+    /* Run the resonator eigen-solve synchronously on the calling thread. */
     bool            calculateSync();
-    /* Select the sparse shift-invert eigensolver (resonator mode): find `nev`
-     * modes with k^2 nearest `sigmaK2`. Targets the physical range directly and
-     * scales to fine meshes. Pass sigmaK2 < 0 to fall back to the dense solver. */
-    void            setResonatorSolveTarget(double sigmaK2, int nev);
-    /* Enable/disable tree-cotree gauging (default off — see MicroEngine.cpp). */
-    void            setGauge(bool enable);
-    /* Grad-div penalty (resonator mode): add factor * meanDiag(S) * G Gᵀ to the
-     * stiffness, where G is the discrete gradient. Lifts the gradient null-space
-     * modes to higher k² so the physical modes (nearly divergence-free) become
-     * the smallest eigenvalues — needed for very-low-frequency modes (spiral).
-     * factor = 0 disables it (default). */
-    void            setGradDivPenalty(double factor);
-    void            setSizeGrid(const double& dx, const double& dy, const double& dz);
-    double          getDx();
-    double          getDy();
-    double          getDz();
-    void            setBeginPoint(const MathPoint3D& point);
-    MathPoint3D     getBeginPoint();
-    MathPoint3D     getBeginModelPoint();
-    MathPoint3D     getEndModelPoint();
-    bool            getIteratorTetraedrs(ListMicroTetraedr::iterator& itBegin, ListMicroTetraedr::iterator& itEnd);
-    void            setLenWave(double Value);
-    double          getLenWave();
-    void            setFrequency(double MHzValue);      /* задание частоты в МГц */
-    double          getFrequency();                     /* получение частоты в МГц */
     void            setResonatorMode(bool enable);
+
+    /* Sparse shift-invert target: `nev` modes with k^2 nearest `sigmaK2`
+     * (sigmaK2 < 0 falls back to the dense full-spectrum solver). */
+    void            setResonatorSolveTarget(double sigmaK2, int nev);
+    /* Grad-div penalty (factor * meanDiag(S)): lifts the gradient null space so the
+     * physical modes become the smallest eigenvalues. 0 disables it. */
+    void            setGradDivPenalty(double factor);
+    /* Tree-cotree gauging — experimental, off by default (see MicroEngine.cpp). */
+    void            setGauge(bool enable);
+
     bool            getEighValues(std::vector<double>& eighValues);
-    void            addObject(const MathObject& object, bool solid, const double& sigma, const double& epsilon);
-    bool            setMainSurface(uint32_t index);
-    void            addPort(const MicroPort& port);
-    bool            genPoints();            /* генерация точек */
-    bool            calculate();            /* расчет поля */
-    bool            calculateBasisKoef(uint32_t numEighVal); /* расчет базисных коэффициентов (только резонаторная задача) */
-    bool            isGenerate();
-    bool            isCalculate();
-    MathVector3D    getField(const MathPoint3D& point, const double& phase, double* outAmpl = 0);
+    /* Reconstruct the basis coefficients of eigenmode `numEighVal` (call before
+     * sampling its field). */
+    bool            calculateBasisKoef(uint32_t numEighVal);
     /* Sample the current mode's real field vector at every tetrahedron centroid
-     * (call calculateBasisKoef first to pick the mode). One pass, no point
-     * search — for the field-glyph visualization. */
+     * (one pass, low-quality slivers skipped) — for the field-glyph view. */
     bool            sampleFieldAtCentroids(std::vector<std::array<double, 3> >& points,
                                            std::vector<std::array<double, 3> >& vectors);
     void            clear();
+
 signals:
-    void            startObjectsGenerate();
-    void            startPortsGenerate();
-    void            startDrawObjects();
-    void            endGenerate();
     void            startCreateMatrix();
     void            startSolveMatrix();
-    void            endCalculate(bool ok);
-protected:
-    void            run();
+
 private:
-    bool            isInObjects(const MathPoint3D& point, const uint32_t indexBegin, bool ignoreMetallAtribut = true);
-    bool            eraseObject(uint32_t index);
-    bool            eraseMetallTetraedrs();
-    void            _genPoints();
     bool            _calculate();
-    bool            calculateActiveMode(std::vector<double>& epsilonValuesTetraedrs, std::vector<double>& sigmaValuesTetraedrs);
     bool            calculateResonatorMode(std::vector<double>& epsilonValuesTetraedrs);
-    /* Получение локальной матрицы элемента */
-    void            getLocalMatrix(MathMatrix<MathComplex<double> >& localMatrix,
-                                                    MicroTetraedr& tetraedr,
-                                                    double sigma,
-                                                    double epsilon,
-                                                    std::set<uint32_t>& indexNullElements);
     void            getLocalMatrixResonator(MathMatrix<double>& localMatrixT,
-                                                    MathMatrix<double>& localMatrixR,
-                                                    MicroTetraedr& tetraedr,
-                                                    double epsilon,
-                                                    std::set<uint32_t>& indexNullElements);
+                                            MathMatrix<double>& localMatrixR,
+                                            MicroTetraedr& tetraedr,
+                                            double epsilon,
+                                            std::set<uint32_t>& indexNullElements);
     bool            calculateMetallEdges();
     bool            isMetallEdge(const MicroEdge& edge);
-    /* Tree-cotree gauge: build a spanning tree of the mesh-edge graph (PEC edges
-     * first) and record the non-PEC tree edges to be gauged to zero. */
+    /* Tree-cotree gauge: spanning tree of the mesh-edge graph (PEC edges first). */
     void            buildTreeCotreeGauge();
     bool            isGaugeEdge(const MicroEdge& edge);
-    bool            getFieldPoints(const MathPoint3D &point, MathVector3D &amplVectorH, double &phaseVectorH);
-    bool            getAbsorbPoints(const MathPoint3D& point);
-    bool            isPointInEndPort(const MathPoint3D& point);
+
     bool            pointGenerate;
     bool            resonatorModeEnabled;
-    uint32_t        numAction;
     MicroGrid       grid;
-    uint32_t        indexMainSurface;
-    /* Для резонансной задачи */
-    std::vector<GlobalTableElement> globalTable;
-    std::vector<double> rootsGlobalMatrix;
-    std::vector<double> eighValue;
-    uint32_t        widthGlobalMatrix;
-    /* волновое число */
-    double          waveNumber;
-    std::vector<MathObject> objects;
-    /* Значения диэлектрической проницаемости и проводимости */
-    std::vector<double> sigmaValues;
-    std::vector<double> epsilonValues;
-    std::vector<bool> solidObjects;
-    /* Граничные значения вектора E */
-    std::vector<MicroPort> ports;
-    /* Решения СЛАУ - весовые коэффициенты базисных функций */
-    std::vector<MicroEdge> tableMetallEdges;
+    /* Assembled-system state. */
+    std::vector<GlobalTableElement>   globalTable;
+    std::vector<double>               rootsGlobalMatrix;
+    std::vector<double>               eighValue;
+    uint32_t                          widthGlobalMatrix;
+    std::vector<MicroEdge>            tableMetallEdges;
     std::vector<MathComplex<double> > basisKoef;
-    /* Resonator eigensolver target: if solveSigmaK2 >= 0 use sparse shift-invert
-     * around solveSigmaK2 for solveNev modes, else dense full-spectrum. */
+    /* Eigensolver target: solveSigmaK2 >= 0 => sparse shift-invert, else dense. */
     double          solveSigmaK2;
     int             solveNev;
-    /* Tree-cotree gauging state. gaugeEdges holds gauged (tree) non-PEC edges,
-     * keyed by sorted node serial numbers. */
+    /* Tree-cotree gauge state (gauged non-PEC tree edges, keyed by node serials). */
     bool            useGauge;
     std::set<std::pair<uint32_t, uint32_t> > gaugeEdges;
     /* Grad-div penalty weight factor (0 = off). */
     double          penaltyFactor;
 };
-
-
 
 #endif // MICROENGINE_H

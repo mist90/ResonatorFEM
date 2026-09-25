@@ -4,18 +4,6 @@
 #include <cmath>
 #include <vector>
 
-/* вычисление C для абсорбционных условий */
-double getValueC(double *b, double *c, double *d, uint32_t indexPi, uint32_t indexQj, const MathVector3D& normVector)
-{
-    double cosAlpha = ((MathVector3D)normVector)*MathVector3D(1.0, 0.0, 0.0);
-    double cosBeta = ((MathVector3D)normVector)*MathVector3D(0.0, 1.0, 0.0);
-    double cosGamma = ((MathVector3D)normVector)*MathVector3D(0.0, 0.0, 1.0);
-
-    return (d[indexPi]*cosBeta - c[indexPi]*cosGamma)*(d[indexQj]*cosBeta - c[indexQj]*cosGamma) +
-           (b[indexPi]*cosGamma - d[indexPi]*cosAlpha)*(b[indexQj]*cosGamma - d[indexQj]*cosAlpha) +
-           (c[indexPi]*cosAlpha - b[indexPi]*cosBeta)*(c[indexQj]*cosAlpha - b[indexQj]*cosBeta);
-}
-
 bool findEdge(std::vector<GlobalTableElement>& table, MicroEdge& edge, uint32_t& getNumEdge)
 {
     uint32_t i;
@@ -59,12 +47,7 @@ bool GlobalTableElement::isFlags(uint32_t flags)
 
 MicroEngine::MicroEngine()
 {
-    grid.setBeginPoint(MathPoint3D(0.0, 0.0, 0.0));
-    grid.setSizeGrid(10.0, 10.0, 10.0);
     pointGenerate = false;
-    waveNumber = 1.0;
-    indexMainSurface = 0;
-    numAction = 0;
     resonatorModeEnabled = false;
     widthGlobalMatrix = 0;
     solveSigmaK2 = -1.0;
@@ -86,10 +69,10 @@ bool MicroEngine::generateFromMesh(const FemMesh &mesh)
 
     basisKoef.clear();
     if(!grid.loadTetraMesh(mesh)) return false;
-    /* Boundary nodes become PEC (no ports in the mesh-driven resonator path). */
+    /* Every boundary node becomes PEC. */
     grid.getIteratorNodes(itBegin, itEnd);
     for(it = itBegin; it != itEnd; ++it)
-        if(it->isFlags(NODE_IS_BOUNDARY) && !isPointInEndPort(it->point()))
+        if(it->isFlags(NODE_IS_BOUNDARY))
             it->addFlags(NODE_IS_METALL);
     /* Boundary surfaces become PEC walls. */
     grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
@@ -200,160 +183,10 @@ MicroEngine::~MicroEngine()
     clear();
 }
 
-void MicroEngine::setBeginPoint(const MathPoint3D &point)
-{
-    grid.setBeginPoint(point);
-}
-
-MathPoint3D MicroEngine::getBeginPoint()
-{
-    return grid.getBeginPoint();
-}
-
-MathPoint3D MicroEngine::getBeginModelPoint()
-{
-    return grid.getBeginModelPoint();
-}
-
-MathPoint3D MicroEngine::getEndModelPoint()
-{
-    return grid.getEndModelPoint();
-}
-
-bool MicroEngine::getIteratorTetraedrs(ListMicroTetraedr::iterator &itBegin, ListMicroTetraedr::iterator &itEnd)
-{
-    return grid.getIteratorTetraedrs(itBegin, itEnd);
-}
-
-void MicroEngine::setLenWave(double Value)
-{
-    if(!resonatorModeEnabled)
-        waveNumber = 2.0*M_PI/Value;
-}
-
-double MicroEngine::getLenWave()
-{
-    return 2.0*M_PI/waveNumber;
-}
-
-void MicroEngine::setFrequency(double MHzValue)
-{
-    if(!resonatorModeEnabled)
-        waveNumber = 2.0*M_PI*(MHzValue*1E+06)/3E+08;
-}
-
-double MicroEngine::getFrequency()
-{
-    return waveNumber/(2.0*M_PI*1E+06)*3E+08;
-}
-
 void MicroEngine::setResonatorMode(bool enable)
 {
     clear();
     resonatorModeEnabled = enable;
-}
-
-void MicroEngine::setSizeGrid(const double &dx, const double &dy, const double &dz)
-{
-    clear();
-    grid.setSizeGrid(dx, dy, dz);
-}
-
-double MicroEngine::getDx()
-{
-    return grid.getSizeX();
-}
-
-double MicroEngine::getDy()
-{
-    return grid.getSizeY();
-}
-
-double MicroEngine::getDz()
-{
-    return grid.getSizeZ();
-}
-
-void MicroEngine::addObject(const MathObject &object, bool solid, const double &sigma, const double &epsilon)
-{
-    objects.push_back(object);
-    sigmaValues.push_back(sigma);
-    epsilonValues.push_back(epsilon);
-    solidObjects.push_back(solid);
-    pointGenerate = false;
-}
-
-bool MicroEngine::setMainSurface(uint32_t index)
-{
-    if(index >= objects.size()) return false;
-    indexMainSurface = index;
-    return true;
-}
-
-void MicroEngine::addPort(const MicroPort &port)
-{
-    if(!resonatorModeEnabled)
-        ports.push_back(port);
-}
-
-bool MicroEngine::genPoints()
-{
-    if(isRunning()) return false;
-    numAction = ACTION_GENERATE;
-    start();
-    return true;
-}
-
-bool MicroEngine::calculate()
-{
-    if(isRunning()) return false;
-    numAction = ACTION_CALCULATE;
-    start();
-    return true;
-}
-
-bool MicroEngine::isGenerate()
-{
-    return pointGenerate;
-}
-
-bool MicroEngine::isCalculate()
-{
-    if(basisKoef.size()) return true;
-    else return false;
-}
-
-MathVector3D MicroEngine::getField(const MathPoint3D &point, const double &phase, double *outAmpl)
-{
-    ListMicroTetraedr::iterator itTet, itTetBegin, itTetEnd;
-    MathVector3D vectorField, maxVectorField;
-    MathComplex<double> koef;
-    double ampl, beginPhase;
-    uint32_t i;
-
-    vectorField = MathVector3D(0.0, 0.0, 0.0, point);
-    maxVectorField = MathVector3D(0.0, 0.0, 0.0, point);
-    if(!basisKoef.size()) return vectorField;
-    grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
-    for(itTet = itTetBegin; itTet != itTetEnd; itTet++)
-        if(itTet->isInTetraedr(point)) break;
-    if(itTet == itTetEnd) return vectorField;
-    for(i=0; i<6; i++)
-    {
-        koef = basisKoef[6*itTet->getSerialNumber() + i];
-        if(resonatorModeEnabled) maxVectorField = maxVectorField + itTet->getValueBasisFunc(point, i)*koef.re();
-        else
-        {
-            // TODO: не реализовано
-        }
-        ampl = koef.absc();
-        beginPhase = koef.phase();
-        beginPhase += phase;
-        koef.setExponentialArg(ampl, beginPhase);
-        vectorField = vectorField + itTet->getValueBasisFunc(point, i)*koef.re();
-    }
-    if(outAmpl) *outAmpl = maxVectorField.lenght();
-    return vectorField;
 }
 
 bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &points,
@@ -396,11 +229,6 @@ bool MicroEngine::sampleFieldAtCentroids(std::vector<std::array<double, 3> > &po
 void MicroEngine::clear()
 {
     grid.clear();
-    objects.clear();
-    sigmaValues.clear();
-    epsilonValues.clear();
-    solidObjects.clear();
-    ports.clear();
     globalTable.clear();
     rootsGlobalMatrix.clear();
     basisKoef.clear();
@@ -408,321 +236,24 @@ void MicroEngine::clear()
     eighValue.clear();
     widthGlobalMatrix = 0;
     pointGenerate = false;
-    indexMainSurface = 0;
-    numAction = 0;
-}
-
-void MicroEngine::run()
-{
-    switch(numAction)
-    {
-    case ACTION_GENERATE:
-        _genPoints();
-        emit endGenerate();
-        break;
-
-    case ACTION_CALCULATE:
-        if(_calculate()) emit endCalculate(true);
-        else emit endCalculate(false);
-        break;
-    }
-}
-
-bool MicroEngine::isInObjects(const MathPoint3D &point, const uint32_t indexBegin, bool ignoreMetallAtribut)
-{
-    uint32_t i;
-
-    if(ignoreMetallAtribut)
-    {
-        for(i=indexBegin; i<objects.size(); i++)
-            if(objects[i].isPointInFigure(point)) return true;
-    }
-    else
-    {
-        for(i=indexBegin; i<objects.size(); i++)
-            if(objects[i].isPointInFigure(point) && sigmaValues[i] != SIGMA_IDEAL_METALL) return true;
-    }
-    return false;
-}
-
-bool MicroEngine::eraseObject(uint32_t index)
-{
-    ListMicroTetraedr::iterator itT, itBeginT, itEndT;
-    MathPoint3D point;
-    bool findOk = false;
-
-    grid.getIteratorTetraedrs(itBeginT, itEndT);
-    itT = itBeginT;
-    while(itT != itEndT)
-    {
-        point = (itT->nodes(0)->point() + itT->nodes(1)->point() + itT->nodes(2)->point() + itT->nodes(3)->point())/4.0;
-        if(objects[index].isPointInFigure(point) &&
-                !isInObjects(point, index + 1, false))
-        {
-            grid.deleteOneTetraedr(itT);
-            findOk = true;
-        }
-        else itT++;
-    }
-    return findOk;
-}
-
-bool MicroEngine::eraseMetallTetraedrs()
-{
-    ListMicroTetraedr::iterator itT, itBeginT, itEndT;
-    MathPoint3D point;
-    bool inPort;
-    uint32_t i;
-
-    grid.clearLinkNodes();
-    for(i=0; i<objects.size(); i++)
-        if(sigmaValues[i] == SIGMA_IDEAL_METALL) eraseObject(i);
-    grid.getIteratorTetraedrs(itBeginT, itEndT);
-    itT = itBeginT;
-    while(itT != itEndT)
-    {
-        point = (itT->nodes(0)->point() + itT->nodes(1)->point() + itT->nodes(2)->point() + itT->nodes(3)->point())/4.0;
-        inPort = false;
-        for(i=0; i<ports.size(); i++)
-            if(ports[i].isPointInPort(point))
-            {
-                inPort = true;
-                break;
-            }
-        if(!objects[indexMainSurface].isPointInFigure(point) && !inPort)
-        {
-            grid.deleteOneTetraedr(itT);
-        }
-        else itT++;
-    }
-    return true;
-}
-
-void MicroEngine::_genPoints()
-{
-    uint32_t i, j, k, numBegin;
-    std::vector<MathPoint3D> vectorPoints;
-    std::list<MicroNode>::iterator it, itBegin, itEnd;
-    ListMicroTetraedr::iterator itTet, itTetBegin, itTetEnd;
-    MicroNode node;
-    bool pointInPort;
-
-    basisKoef.clear();
-    grid.clear();
-    grid.makeSuperStruct();
-    emit startObjectsGenerate();
-    /* генерация узлов */
-    for(i=0; i<objects.size(); i++)
-    {
-        vectorPoints.clear();
-        node.clear();
-        /* добавление нового объекта */
-        objects[i].getPoints(vectorPoints, solidObjects[i]);
-        for(j=0; j<vectorPoints.size(); j++)
-        {
-            pointInPort = false;
-            if(objects[indexMainSurface].isPointInFigure(vectorPoints[j]))     /* точки не должны выходить за пределы общей поверхности */
-            {
-                for(k=0; k<ports.size(); k++)                   /* точки не должны попадать в порт */
-                    if(ports[k].isPointInPort(vectorPoints[j]))
-                    {
-                        pointInPort = true;
-                        break;
-                    }
-            }
-            else pointInPort = true;
-            if(pointInPort) continue;
-            if(sigmaValues[i] == SIGMA_IDEAL_METALL) node.addFlags(NODE_IS_METALL);
-            node.setPoint(vectorPoints[j]);
-            grid.addNode(node);
-        }
-    }
-    emit startPortsGenerate();
-    numBegin = objects.size();
-    /* генерация объектов портов */
-    for(i=0; i<ports.size(); i++)
-    {
-        ports[i].getObjects(objects, sigmaValues, epsilonValues);
-    }
-    /* генерация узлов портов */
-    for(i=numBegin; i<objects.size(); i++)
-    {
-        vectorPoints.clear();
-        node.clear();
-
-        /* добавление нового объекта */
-        objects[i].getPoints(vectorPoints, false);
-        for(j=0; j<vectorPoints.size(); j++)
-        {
-            if(sigmaValues[i] == SIGMA_IDEAL_METALL) node.addFlags(NODE_IS_METALL);
-            node.setPoint(vectorPoints[j]);
-            grid.addNode(node);
-        }
-    }
-
-    grid.deleteSuperStruct();       /* удаление суперструктуры */
-    eraseMetallTetraedrs();         /* удаление металлических тетраэдров */
-    grid.linkNodes();               /* связывание узлов */
-    grid.setNumberNodesTetraedrs(); /* последовательная нумерация узлов и тераэдров */
-    grid.getIteratorNodes(itBegin, itEnd);
-    for(it = itBegin; it != itEnd; it++)
-        if(it->isFlags(NODE_IS_BOUNDARY) && !isPointInEndPort(it->point())) it->addFlags(NODE_IS_METALL);
-    grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
-    for(itTet = itTetBegin; itTet != itTetEnd; itTet++) itTet->calculateBoundariesSurface();
-    for(itTet = itTetBegin; itTet != itTetEnd; itTet++)
-        for(i=0; i<4; i++)
-            if(itTet->isBoundarySurface(i)) itTet->addFlags(i, SURFACE_IS_METALL);
-    calculateMetallEdges();
-    pointGenerate = true;
 }
 
 bool MicroEngine::_calculate()
 {
-    ListMicroTetraedr::iterator itTet, itTetBegin, itTetEnd;
-    uint32_t i;
-    /* для получения значений проводимости и диэлектрической проницаемости */
-    std::vector<double> sigmaValuesTetraedrs;
+    /* All tetrahedra are vacuum (relative permittivity 1); the mesh carries no
+     * material regions in the current pipeline. */
     std::vector<double> epsilonValuesTetraedrs;
 
     if(!pointGenerate) return false;
     basisKoef.clear();
-    /* Заполнение структуры значениями проводимости и диэлектрической проницаемости */
     emit startCreateMatrix();
-    sigmaValuesTetraedrs.resize(grid.getNumTetraedrs(), 0.0);
     epsilonValuesTetraedrs.resize(grid.getNumTetraedrs(), 1.0);
-    for(i=0; i<objects.size(); i++)
-    {
-        /* проверка на попадание имеющихся тетраэдров в объекты */
-        grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
-        for(itTet = itTetBegin; itTet != itTetEnd; itTet++)
-            if(objects[i].isPointInFigure(itTet->nodes(0)->point()) &&
-               objects[i].isPointInFigure(itTet->nodes(1)->point()) &&
-               objects[i].isPointInFigure(itTet->nodes(2)->point()) &&
-               objects[i].isPointInFigure(itTet->nodes(3)->point()))
-            {
-                sigmaValuesTetraedrs[itTet->getSerialNumber()] = sigmaValues[i];
-                epsilonValuesTetraedrs[itTet->getSerialNumber()] = epsilonValues[i];
-            }
-    }
-    /* очистка массивов */
     rootsGlobalMatrix.clear();
     globalTable.clear();
     eighValue.clear();
     widthGlobalMatrix = 0;
-    /* генерация массива металлических тетраэдров */
     calculateMetallEdges();
-    /* расчет */
-    if(!resonatorModeEnabled) return calculateActiveMode(epsilonValuesTetraedrs, sigmaValuesTetraedrs);
-    else return calculateResonatorMode(epsilonValuesTetraedrs);
-
-}
-
-bool MicroEngine::calculateActiveMode(std::vector<double> &epsilonValuesTetraedrs, std::vector<double> &sigmaValuesTetraedrs)
-{
-    ListMicroTetraedr::iterator itTet, itTetBegin, itTetEnd;
-    uint32_t i, j;
-    /* для получения локальной матрицы */
-    MathMatrix<MathComplex<double> > localMatrix;
-    std::set<uint32_t> indexes;
-    MicroEdge localEdge;
-    std::vector<uint32_t> validIndexes;
-    uint32_t numEdge;
-    uint32_t beginIndexTable;
-    uint32_t numLine, numElement;
-    uint32_t indexI, indexJ;
-    /* для работы с глобальной матрицей */
-    std::vector<GlobalTableElement> globalTable;
-    std::vector<MathComplex<double> > rootsGlobalMatrix;
-    uint32_t globalIndex;
-    MathMatrixSparse<MathComplex<double> > globalMatrix;
-    std::vector<MathComplex<double> > globalVector;
-    MathComplex<double> valueElement;
-    double sign, signLine;
-
-    /* Заполнение глобальной матрицы */
-    grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
-    globalMatrix.setSize(0, 0);
-    globalVector.clear();
-    globalIndex = 0;
-    for(itTet = itTetBegin; itTet != itTetEnd; itTet++)     /* проход по всем тетраэдрам */
-    {
-        indexes.clear();
-        validIndexes.clear();
-        getLocalMatrix(localMatrix, *itTet, sigmaValuesTetraedrs[itTet->getSerialNumber()], epsilonValuesTetraedrs[itTet->getSerialNumber()], indexes);
-        /* проход по ребрам тетраэдра для заполнения таблицы соответствия и индексов неметаллических элементов */
-        for(i=0; i<6; i++)
-        {
-            localEdge = itTet->getEdge(i);
-            if(indexes.find(i) != indexes.end())    /* если ребро металлическое */
-                globalTable.push_back(GlobalTableElement(localEdge, 0, EDGE_NULL));
-            else
-            {
-                validIndexes.push_back(i);
-                if(findEdge(globalTable, localEdge, numEdge))
-                {
-                    if(localEdge.isReverse(globalTable[numEdge].getEdge()))
-                        globalTable.push_back(GlobalTableElement(localEdge, globalTable[numEdge].getNumElement(), EDGE_REVERSE));
-                    else globalTable.push_back(GlobalTableElement(localEdge, globalTable[numEdge].getNumElement(), 0));
-                }
-                else
-                {
-                    globalTable.push_back(GlobalTableElement(localEdge, globalIndex, EDGE_FREE));
-                    globalIndex++;
-                }
-            }
-        }
-        beginIndexTable = globalTable.size() - 6;
-        /* внесение строк в глобальную матрицу */
-        for(i=0; i<validIndexes.size(); i++)
-        {
-            indexI = beginIndexTable + validIndexes[i];
-            numLine = globalTable[indexI].getNumElement();
-            if(globalTable[indexI].isFlags(EDGE_REVERSE)) signLine = -1.0;
-            else signLine = 1.0;
-            for(j=0; j<validIndexes.size(); j++)    /* копирование строки из локальной матрицы в глобальную */
-            {
-                indexJ = beginIndexTable + validIndexes[j];
-                numElement = globalTable[indexJ].getNumElement();
-                if(globalTable[indexJ].isFlags(EDGE_REVERSE)) sign = -1.0;
-                else sign = 1.0;
-                if(globalTable[indexI].isFlags(EDGE_FREE) || globalTable[indexJ].isFlags(EDGE_FREE)) valueElement = 0;
-                else valueElement = globalMatrix.element(numElement, numLine);
-                globalMatrix.setElementExt(numElement, numLine, valueElement + localMatrix.element(validIndexes[j], validIndexes[i])*sign*signLine);
-            }
-            if(numLine >= globalVector.size()) globalVector.resize(numLine + 1, MathComplex<double>(0.0, 0.0));
-            globalVector[numLine] += localMatrix.element(6, validIndexes[i])*signLine;
-        }
-
-    }
-    /* копирование столбца значений в расширенную матрицу */
-    globalMatrix.extensionWidth(1);
-    for(i=0; i<globalMatrix.height(); i++)
-        globalMatrix.setElement(globalMatrix.width() - 1, i, globalVector[i]);
-
-    /* освобождение памяти */
-    globalVector.clear();
-    epsilonValuesTetraedrs.clear();
-    sigmaValuesTetraedrs.clear();
-    /* решение СЛАУ */
-    emit startSolveMatrix();
-    if(!globalMatrix.solveNoCopyMatrix(rootsGlobalMatrix))
-    {
-        return false;
-    }
-
-    globalMatrix.clear();
-    /* заполнение таблицы весовых коэффициентов */
-    basisKoef.resize(globalTable.size());
-    for(i=0; i<globalTable.size(); i++)
-    {
-        if(globalTable[i].isFlags(EDGE_NULL)) basisKoef[i] = 0;
-        else
-        {
-            if(globalTable[i].isFlags(EDGE_REVERSE)) basisKoef[i] = -rootsGlobalMatrix[globalTable[i].getNumElement()];
-            else basisKoef[i] = rootsGlobalMatrix[globalTable[i].getNumElement()];
-        }
-    }
-    return true;
+    return calculateResonatorMode(epsilonValuesTetraedrs);
 }
 
 bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetraedrs)
@@ -877,7 +408,6 @@ bool MicroEngine::calculateBasisKoef(uint32_t numEighVal)
     if(!resonatorModeEnabled) return false;
     if(rootsGlobalMatrix.size() == 0) return false;
     if(numEighVal >= eighValue.size()) return false;
-    waveNumber = sqrt(eighValue[numEighVal]);
     basisKoef.resize(globalTable.size(), MathComplex<double>(0.0, 0.0));
     for(i=0; i<globalTable.size(); i++)
     {
@@ -888,7 +418,6 @@ bool MicroEngine::calculateBasisKoef(uint32_t numEighVal)
             else basisKoef[i] = rootsGlobalMatrix[globalTable[i].getNumElement() + numEighVal*widthGlobalMatrix];
         }
     }
-    waveNumber = sqrt(eighValue[numEighVal]);
     return true;
 }
 
@@ -898,143 +427,6 @@ bool MicroEngine::getEighValues(std::vector<double> &eighValues)
     if(eighValue.size() == 0) return false;
     eighValues = eighValue;
     return true;
-}
-
-void MicroEngine::getLocalMatrix(MathMatrix<MathComplex<double> > &localMatrix,
-                                 MicroTetraedr& tetraedr,
-                                 double sigma,
-                                 double epsilon,
-                                 std::set<uint32_t> &indexNullElements)
-{
-    /* TODO: в классе MathMatrix сначала идет столбец, потом строка */
-    uint32_t i, j, k;
-    /* для коэффициенты барицентрических функций */
-    MathMatrix<double> matrix(4, 4);
-    double b[4], c[4], d[4];
-    /* для вычисления вспомогательных величин */
-    MathVector3D addV[4][4];
-    double addPhi[4][4];
-    double matrixC[4][4];
-    /* для вычисления элементов локальной матрицы */
-    double integralD, integralG;
-    double volumeTetraedr;
-    uint32_t m1, m2, n1, n2;
-    /* для вычисления свободного столбца и абсорбционных условий */
-    uint32_t numEdge, numPoints[3];
-    MathVector3D vectorsH[3];
-    MathVector3D normVector;
-    MathPoint3D pointsField[3];
-    MathPoint3D centerPoint;
-    double phases[3];
-    double areaSurface;
-    MathComplex<double> sElement, cmplxPhases[3];
-    double valueC;
-
-    /* определение ребер, граничащих с металлом */
-    indexNullElements.clear();
-    for(i=0; i<6; i++)
-        if(isMetallEdge(tetraedr.getEdge(i)))
-            indexNullElements.insert(i);
-
-    /* вычисление барицентрических коэффициентов */
-    for(i=0; i<4; i++)
-    {
-        matrix.element(i, 0) = tetraedr.nodes(i)->point().getX();
-        matrix.element(i, 1) = tetraedr.nodes(i)->point().getY();
-        matrix.element(i, 2) = tetraedr.nodes(i)->point().getZ();
-        matrix.element(i, 3) = 1.0;
-    }
-    volumeTetraedr = fabs(matrix.determinant())/6.0;
-    matrix = matrix.inverseMatrix();
-    for(i=0; i<4; i++)
-    {
-        b[i] = matrix.element(0, i);
-        c[i] = matrix.element(1, i);
-        d[i] = matrix.element(2, i);
-    }
-    matrix.clear();
-    /* вычисление дополнительных величин */
-    for(i=0; i<4; i++)
-        for(j=0; j<4; j++)
-        {
-            addV[i][j] = MathVector3D(c[i]*d[j] - c[j]*d[i], b[j]*d[i] - b[i]*d[j], b[i]*c[j] - b[j]*c[i]);
-            addPhi[i][j] = b[i]*b[j] + c[i]*c[j] + d[i]*d[j];
-            matrixC[i][j] = 1.0/20.0;
-        }
-    for(i=0; i<4; i++) matrixC[i][i] = matrixC[i][i]*2.0;
-    /* вычисление интегралов и элементов матрицы */
-    localMatrix.setSize(7, 6);
-    for(i=0; i<6; i++)
-    {
-        if(indexNullElements.find(i) != indexNullElements.end()) continue;
-        for(j=0; j<6; j++)
-        {
-            if(indexNullElements.find(j) != indexNullElements.end()) continue;
-            m1 = tetraedr.getNumBeginEdge(i);
-            m2 = tetraedr.getNumEndEdge(i);
-            n1 = tetraedr.getNumBeginEdge(j);
-            n2 = tetraedr.getNumEndEdge(j);
-            integralD = 4.0*volumeTetraedr*(tetraedr.getEdge(i).lenEdge())*(tetraedr.getEdge(j).lenEdge()) * (addV[m1][m2]*addV[n1][n2]);
-            integralG = volumeTetraedr*(tetraedr.getEdge(i).lenEdge())*(tetraedr.getEdge(j).lenEdge())*
-                    (addPhi[m2][n2]*matrixC[m1][n1] - addPhi[m2][n1]*matrixC[m1][n2] - addPhi[m1][n2]*matrixC[m2][n1] + addPhi[m1][n1]*matrixC[m2][n2]);
-            localMatrix.element(j, i) = MathComplex<double>(integralD) +
-                                MathComplex<double>(0.0, waveNumber*120.0*M_PI*sigma*integralG) -
-                                MathComplex<double>(waveNumber*waveNumber*epsilon*integralG);
-        }
-    }
-    /* вычисление свободного столбца */
-    for(i=0; i<4; i++)              /* проход по плоскостям тетраэдра */
-    {
-        for(j=0; j<3; j++)          /* получение точек плоскости */
-            pointsField[j] = tetraedr.nodes(tetraedr.getNumPointFromSurface(i, j))->point();
-        if(getFieldPoints(pointsField[0], vectorsH[0], phases[0]) &&
-           getFieldPoints(pointsField[1], vectorsH[1], phases[1]) &&
-           getFieldPoints(pointsField[2], vectorsH[2], phases[2]))
-        {
-            centerPoint = (pointsField[0] + pointsField[1] + pointsField[2])/3.0;
-            areaSurface = AreaTriangle(pointsField[0], pointsField[1], pointsField[2]);
-            for(j=0; j<3; j++) cmplxPhases[j].setExponentialArg(1.0, phases[j]);
-            for(j=0; j<3; j++)
-            {
-                numEdge = tetraedr.getNumEdgeFromSurface(i, j);
-                sElement = (cmplxPhases[0] + cmplxPhases[1] + cmplxPhases[2])/3.0;
-                sElement = sElement*(((vectorsH[0] + vectorsH[1] + vectorsH[2])*(1.0/3.0))*tetraedr.getValueBasisFunc(centerPoint, numEdge))*
-                        areaSurface*waveNumber*120.0*M_PI;
-                localMatrix.element(6, numEdge) = sElement;
-            }
-            break;
-        }
-    }
-    /* добавление в матрицу слагаемых, задаваемых абсорбционными условиями */
-    for(i=0; i<4; i++)              // проход по плоскостям тетраэдра
-    {
-        for(j=0; j<3; j++)          // получение точек плоскости
-        {
-            numPoints[j] = tetraedr.getNumPointFromSurface(i, j);
-            pointsField[j] = tetraedr.nodes(numPoints[j])->point();
-        }
-        normVector = tetraedr.getNormVector(i);
-        if(getAbsorbPoints(pointsField[0]) &&
-                   getAbsorbPoints(pointsField[1]) &&
-                   getAbsorbPoints(pointsField[2]))
-        {
-            areaSurface = AreaTriangle(pointsField[0], pointsField[1], pointsField[2]);
-            for(j=0; j<3; j++)
-            {
-                numEdge = tetraedr.getNumEdgeFromSurface(i, j);
-                for(k=0; k<6; k++)
-                {
-                    m1 = tetraedr.getNumBeginEdge(numEdge);
-                    m2 = tetraedr.getNumEndEdge(numEdge);
-                    n1 = tetraedr.getNumBeginEdge(k);
-                    n2 = tetraedr.getNumEndEdge(k);
-                    valueC = getValueC(b, c, d, m2, n2, normVector) - getValueC(b, c, d, m2, n1, normVector) - getValueC(b, c, d, m1, n2, normVector) + getValueC(b, c, d, m1, n1, normVector);
-                    localMatrix.element(k, numEdge) = localMatrix.element(k, numEdge) + MathComplex<double>(0.0, waveNumber/12.0*sqrt(epsilon)*areaSurface*valueC);
-                }
-            }
-            break;
-        }
-    }
 }
 
 void MicroEngine::getLocalMatrixResonator(MathMatrix<double> &localMatrixT,
@@ -1130,8 +522,7 @@ bool MicroEngine::calculateMetallEdges()
                 for(j=0; j<3; j++)
                 {
                     edge = MicroEdge(it->nodes(i + j), it->nodes(i + (j + 1)%3));
-                    if(!isPointInEndPort(edge.getNode1()->point()) || !isPointInEndPort(edge.getNode2()->point()))
-                        if(!isMetallEdge(edge)) tableMetallEdges.push_back(edge);
+                    if(!isMetallEdge(edge)) tableMetallEdges.push_back(edge);
                 }
     }
     return true;
@@ -1146,32 +537,3 @@ bool MicroEngine::isMetallEdge(const MicroEdge &edge)
     return false;
 }
 
-bool MicroEngine::getFieldPoints(const MathPoint3D &point, MathVector3D &amplVectorH, double &phaseVectorH)
-{
-    uint32_t i;
-
-    for(i=0; i<ports.size(); i++)
-        if(ports[i].getFieldPoints(point, amplVectorH, phaseVectorH)) return true;
-    return false;
-}
-
-
-bool MicroEngine::getAbsorbPoints(const MathPoint3D &point)
-{
-    uint32_t i;
-
-    for(i=0; i<ports.size(); i++)
-        if(ports[i].getAbsorbPoints(point)) return true;
-    return false;
-}
-
-bool MicroEngine::isPointInEndPort(const MathPoint3D &point)
-{
-    uint32_t i;
-
-    for(i=0; i<ports.size(); i++)
-        if(ports[i].isPointInEndPort(point)) return true;
-    return false;
-}
-
-//EOF
