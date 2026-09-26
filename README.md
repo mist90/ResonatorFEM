@@ -6,6 +6,9 @@ open-source **Gmsh** library on its **OpenCASCADE** kernel; the FEM assembly and
 GUI are reworked from the original *MicroLBWave* education project, whose
 hand-written Delaunay mesher is replaced here by conforming CSG-based meshes.
 
+<img width="1386" height="941" alt="image" src="https://github.com/user-attachments/assets/b3215309-989a-486a-9236-c842846da18a" />
+
+
 ## Capabilities
 
 - **Cavity shapes:** cylindrical, rectangular.
