@@ -81,9 +81,16 @@ MainDialog::MainDialog()
       f->addRow("turns (–)", turnsEdit); f->addRow("semi-axis radial (m)", ellAEdit);
       f->addRow("semi-axis axial (m)", ellBEdit); }
 
-    meshSizeEdit = field("0.2");
-    meshSizeEdit->setToolTip("Target tetrahedron edge length in metres.\n"
-                             "0 = automatic (Gmsh sizes from CAD curvature).");
+    autoSizeCheck = new QCheckBox("Auto-size mesh");
+    autoSizeCheck->setChecked(true);
+    autoSizeCheck->setToolTip("Let Gmsh choose the element size from the CAD "
+                              "(curvature of walls and the helix wire).");
+    meshSizeEdit = field("0");
+    meshSizeEdit->setToolTip("Target tetrahedron edge length in metres "
+                             "(used only when Auto-size is off).");
+    qualityEdit = field("12");
+    qualityEdit->setToolTip("Auto-size quality: ~elements across the model, plus\n"
+                            "curvature refinement. Higher = finer / more accurate.");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
 
@@ -112,7 +119,9 @@ MainDialog::MainDialog()
     controls->addWidget(coreBoxBox);
     controls->addWidget(coreSpiralBox);
     QFormLayout* solveForm = new QFormLayout();
-    solveForm->addRow("mesh size (m, 0=auto)", meshSizeEdit);
+    solveForm->addRow(autoSizeCheck);
+    solveForm->addRow("auto quality (higher=finer)", qualityEdit);
+    solveForm->addRow("mesh size (m)", meshSizeEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
     controls->addLayout(solveForm);
@@ -152,6 +161,7 @@ MainDialog::MainDialog()
     connect(buildMeshButton, SIGNAL(clicked()), this, SLOT(buildMeshSlot()));
     connect(computeButton,   SIGNAL(clicked()), this, SLOT(computeSlot()));
     connect(abortButton,     SIGNAL(clicked()), this, SLOT(abortSlot()));
+    connect(autoSizeCheck,   SIGNAL(toggled(bool)), this, SLOT(autoSizeToggled()));
     connect(saveImageButton, SIGNAL(clicked()), this, SLOT(saveImageSlot()));
     connect(solidsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(fieldsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
@@ -167,6 +177,7 @@ MainDialog::MainDialog()
 
     cavityChanged();
     coreChanged();
+    autoSizeToggled();
     resize(1060, 660);
 
     if (std::getenv("RESONATOR_AUTORUN")) QTimer::singleShot(400, this, SLOT(autoRun()));
@@ -207,7 +218,12 @@ ResonatorSpec MainDialog::readSpec()
     s.turns  = turnsEdit->text().toDouble();
     s.ellA   = ellAEdit->text().toDouble();
     s.ellB   = ellBEdit->text().toDouble();
-    s.meshSize = meshSizeEdit->text().toDouble();
+    if (autoSizeCheck->isChecked()) {
+        s.meshSize    = 0.0;                              /* automatic sizing */
+        s.autoQuality = qualityEdit->text().toDouble();
+    } else {
+        s.meshSize = meshSizeEdit->text().toDouble();
+    }
     return s;
 }
 
@@ -215,6 +231,15 @@ void MainDialog::log(const QString& s)
 {
     console->append(s);
     QApplication::processEvents();
+}
+
+/* Auto-size on: element size comes from the curvature quality; the explicit
+ * mesh-size box is irrelevant. Off: the reverse. Grey out the unused control. */
+void MainDialog::autoSizeToggled()
+{
+    bool a = autoSizeCheck->isChecked();
+    qualityEdit->setEnabled(a);
+    meshSizeEdit->setEnabled(!a);
 }
 
 void MainDialog::layerToggled()

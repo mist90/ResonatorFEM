@@ -21,7 +21,8 @@ struct ResonatorSpec
     double coreA = 0.3, coreB = 0.3, coreD = 1.0; /* box core (x,y,z extents)   */
     double helixR = 0.5, pitch = 0.5, turns = 2.0, ellA = 0.12, ellB = 0.12; /* spiral */
 
-    double meshSize = 0.2;
+    double meshSize = 0.0;      /* target tet edge length; <=0 => automatic sizing   */
+    double autoQuality = 12.0;  /* auto mode: elements per 2*pi of curvature (finer↑) */
 };
 
 /* Geometry + meshing backend built on Gmsh's OpenCASCADE (occ) kernel.

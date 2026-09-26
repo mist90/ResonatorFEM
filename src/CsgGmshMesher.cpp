@@ -13,7 +13,7 @@ namespace {
  * (curvature of the walls and the helix wire) with a cap derived from the model
  * bounding box, so no explicit length is needed. Requires the OCC model to be
  * synchronized first (so the bounding box is available). */
-void applyMeshOptions(double meshSize)
+void applyMeshOptions(double meshSize, double autoQuality = 12.0)
 {
     gmsh::option::setNumber("General.Terminal", 0);
     if (meshSize > 0.0) {
@@ -21,15 +21,19 @@ void applyMeshOptions(double meshSize)
         gmsh::option::setNumber("Mesh.MeshSizeMin", meshSize * 0.5);
         gmsh::option::setNumber("Mesh.MeshSizeMax", meshSize);
     } else {
-        /* Auto: ~12 elements around 2*pi of curvature resolves curved features;
-         * cap the size at bboxDiagonal/15 so flat interior regions still get a
-         * handful of elements across. */
+        /* Auto sizing driven by a single quality Q (higher = finer/more accurate):
+         *  - bulk element size = bboxDiagonal / Q  (≈ Q elements across the model),
+         *  - plus curvature refinement (Q elements per 2*pi) which drives tight
+         *    features such as the helix wire finer than the bulk size.
+         * Both scale with Q, so Q is a monotone density/quality knob for flat and
+         * curved geometry alike. */
+        if (autoQuality < 1.0) autoQuality = 12.0;
         double x0, y0, z0, x1, y1, z1;
         gmsh::model::getBoundingBox(-1, -1, x0, y0, z0, x1, y1, z1);
         double diag = std::sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) +
                                 (z1 - z0) * (z1 - z0));
-        double maxSize = (diag > 0.0) ? diag / 15.0 : 1e22;
-        gmsh::option::setNumber("Mesh.MeshSizeFromCurvature", 12);
+        double maxSize = (diag > 0.0) ? diag / autoQuality : 1e22;
+        gmsh::option::setNumber("Mesh.MeshSizeFromCurvature", autoQuality);
         gmsh::option::setNumber("Mesh.MeshSizeExtendFromBoundary", 1);
         gmsh::option::setNumber("Mesh.MeshSizeFromPoints", 1);
         gmsh::option::setNumber("Mesh.MeshSizeMin", 0.0);
@@ -292,7 +296,7 @@ bool CsgGmshMesher::buildResonator(const ResonatorSpec& s, FemMesh& out, std::st
             gmsh::model::occ::cut({ {3, cavity} }, { {3, core} }, outDimTags, outDimTagsMap);
         }
         gmsh::model::occ::synchronize();
-        applyMeshOptions(s.meshSize);
+        applyMeshOptions(s.meshSize, s.autoQuality);
         gmsh::model::mesh::generate(3);
         bool ok = extractCurrentMesh(out, err);
         gmsh::clear();

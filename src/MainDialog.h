@@ -52,7 +52,8 @@ private:
     QLineEdit   *helixREdit, *pitchEdit, *turnsEdit, *ellAEdit, *ellBEdit;
     QGroupBox   *cavCylBox, *cavBoxBox, *coreCylBox, *coreBoxBox, *coreSpiralBox;
 
-    QLineEdit   *meshSizeEdit, *numModesEdit, *penaltyEdit;
+    QLineEdit   *meshSizeEdit, *qualityEdit, *numModesEdit, *penaltyEdit;
+    QCheckBox   *autoSizeCheck;
     QCheckBox   *solidsCheck, *fieldsCheck, *meshCheck, *mesh3dCheck;
     QPushButton *buildMeshButton, *computeButton, *abortButton, *saveImageButton;
     QListWidget *resultsList;
@@ -77,6 +78,7 @@ private slots:
     void workerFinished();   /* GUI-thread handler for pipeline results */
     void cavityChanged();
     void coreChanged();
+    void autoSizeToggled();   /* switch between explicit size and auto quality */
     void layerToggled();
     void modeSelected(int row);
     void saveImageSlot();
