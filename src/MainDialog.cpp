@@ -37,12 +37,16 @@ static QLineEdit* field(const QString& val)
 MainDialog::MainDialog()
 {
     setWindowTitle("ResonatorFEM");
+    /* Allow maximising/minimising this dialog from the title bar (expand button). */
+    setWindowFlags(windowFlags() | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
     view   = new ResonatorView();
     engine = new MicroEngine();
 
     worker = new QFutureWatcher<PipelineResult>(this);
     solveAfterMesh = false;
     autoRunPending = false;
+    abortReq.store(false);
+    engine->setAbortFlag(&abortReq);   /* assembly loop polls this for cooperative abort */
 
     cavityCombo = new QComboBox();
     cavityCombo->addItems({ "Cylinder", "Rectangular (box)" });
@@ -78,6 +82,8 @@ MainDialog::MainDialog()
       f->addRow("semi-axis axial (m)", ellBEdit); }
 
     meshSizeEdit = field("0.2");
+    meshSizeEdit->setToolTip("Target tetrahedron edge length in metres.\n"
+                             "0 = automatic (Gmsh sizes from CAD curvature).");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
 
@@ -88,6 +94,9 @@ MainDialog::MainDialog()
 
     buildMeshButton = new QPushButton("Build mesh");
     computeButton   = new QPushButton("Compute modes");
+    abortButton     = new QPushButton("Abort");
+    abortButton->setEnabled(false);
+    abortButton->setToolTip("Stop the running mesh/solve (takes effect at the next stage).");
     saveImageButton = new QPushButton("Save image");
     resultsList = new QListWidget();
     console = new QTextEdit(); console->setReadOnly(true); console->setMaximumHeight(110);
@@ -103,12 +112,13 @@ MainDialog::MainDialog()
     controls->addWidget(coreBoxBox);
     controls->addWidget(coreSpiralBox);
     QFormLayout* solveForm = new QFormLayout();
-    solveForm->addRow("mesh size (m)", meshSizeEdit);
+    solveForm->addRow("mesh size (m, 0=auto)", meshSizeEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
     controls->addLayout(solveForm);
     controls->addWidget(buildMeshButton);
     controls->addWidget(computeButton);
+    controls->addWidget(abortButton);
     QLabel* unitsNote = new QLabel(
         "Lengths in metres · frequencies in MHz · field |E| in\n"
         "arbitrary units (an eigenmode is defined up to a scale).");
@@ -141,6 +151,7 @@ MainDialog::MainDialog()
     connect(coreCombo,   SIGNAL(currentIndexChanged(int)), this, SLOT(coreChanged()));
     connect(buildMeshButton, SIGNAL(clicked()), this, SLOT(buildMeshSlot()));
     connect(computeButton,   SIGNAL(clicked()), this, SLOT(computeSlot()));
+    connect(abortButton,     SIGNAL(clicked()), this, SLOT(abortSlot()));
     connect(saveImageButton, SIGNAL(clicked()), this, SLOT(saveImageSlot()));
     connect(solidsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(fieldsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
@@ -221,11 +232,24 @@ void MainDialog::setBusy(bool busy)
     buildMeshButton->setEnabled(!busy);
     computeButton->setEnabled(!busy);
     resultsList->setEnabled(!busy);
+    abortButton->setEnabled(busy);
+}
+
+/* Cooperative cancel: raise the flag the worker/engine polls. Meshing (Gmsh) and
+ * the Spectra solve are atomic, so it takes effect at the next stage boundary or
+ * during matrix assembly — not instantly mid-mesh. */
+void MainDialog::abortSlot()
+{
+    if (!worker->isRunning()) return;
+    abortReq.store(true);
+    abortButton->setEnabled(false);
+    log("Aborting — will stop at the next stage...");
 }
 
 void MainDialog::buildMeshSlot()
 {
     setBusy(true);
+    abortReq.store(false);
     resultsList->clear();
     view->clearField();
     ResonatorSpec spec = readSpec();
@@ -239,6 +263,7 @@ void MainDialog::buildMeshSlot()
             r.err = "Mesh FAILED: " + QString::fromStdString(err);
             return r;
         }
+        if (abortReq.load()) { r.cancelled = true; return r; }
         r.ok = true;
         r.nodes = mesh.nodes.size();
         r.tets  = mesh.tets.size();
@@ -265,6 +290,7 @@ void MainDialog::modeSelected(int row)
 void MainDialog::computeSlot()
 {
     setBusy(true);
+    abortReq.store(false);
     resultsList->clear();
     view->clearField();
     ResonatorSpec spec = readSpec();
@@ -280,13 +306,21 @@ void MainDialog::computeSlot()
             r.err = "Mesh FAILED: " + QString::fromStdString(err);
             return r;
         }
+        if (abortReq.load()) { r.cancelled = true; return r; }
         r.nodes = mesh.nodes.size();
         r.tets  = mesh.tets.size();
         engine->setResonatorMode(true);
         engine->setGradDivPenalty(penalty);
         engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
-        if (!engine->generateFromMesh(mesh)) { r.err = "generateFromMesh failed"; return r; }
-        if (!engine->calculateSync())        { r.err = "Solve FAILED";          return r; }
+        if (!engine->generateFromMesh(mesh)) {
+            if (abortReq.load()) { r.cancelled = true; return r; }
+            r.err = "generateFromMesh failed"; return r;
+        }
+        if (abortReq.load()) { r.cancelled = true; return r; }
+        if (!engine->calculateSync()) {
+            if (abortReq.load()) { r.cancelled = true; return r; }
+            r.err = "Solve FAILED"; return r;
+        }
         engine->getEighValues(r.k2);
         r.ok = true;
         r.solved = true;
@@ -298,6 +332,13 @@ void MainDialog::computeSlot()
 void MainDialog::workerFinished()
 {
     PipelineResult r = worker->result();
+
+    if (r.cancelled) {
+        log("Aborted.");
+        setBusy(false);
+        if (autoRunPending) { autoRunPending = false; finishAutoRun(); }
+        return;
+    }
 
     if (!r.ok) {
         log(r.err);

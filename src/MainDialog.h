@@ -13,6 +13,7 @@
 #include <QTextEdit>
 #include <QGroupBox>
 #include <QFutureWatcher>
+#include <atomic>
 #include <vector>
 
 /* Result of the background mesh(+solve) pipeline handed back to the GUI thread. */
@@ -23,6 +24,7 @@ struct PipelineResult
     size_t              nodes = 0;
     size_t              tets = 0;
     bool                solved = false;   /* true if the eigen-solve ran */
+    bool                cancelled = false;/* aborted by the user            */
     std::vector<double> k2;               /* eigenvalues, when solved */
 };
 
@@ -52,7 +54,7 @@ private:
 
     QLineEdit   *meshSizeEdit, *numModesEdit, *penaltyEdit;
     QCheckBox   *solidsCheck, *fieldsCheck, *meshCheck, *mesh3dCheck;
-    QPushButton *buildMeshButton, *computeButton, *saveImageButton;
+    QPushButton *buildMeshButton, *computeButton, *abortButton, *saveImageButton;
     QListWidget *resultsList;
     QTextEdit   *console;
 
@@ -66,10 +68,12 @@ private:
     QFutureWatcher<PipelineResult> *worker;
     bool                            solveAfterMesh;   /* current job: mesh-only vs mesh+solve */
     bool                            autoRunPending;   /* finish the headless self-test on completion */
+    std::atomic<bool>               abortReq;         /* raised by Abort, polled by the worker/engine */
 
 private slots:
     void buildMeshSlot();
     void computeSlot();
+    void abortSlot();        /* request cancellation of the running job */
     void workerFinished();   /* GUI-thread handler for pipeline results */
     void cavityChanged();
     void coreChanged();

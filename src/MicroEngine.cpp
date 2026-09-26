@@ -280,8 +280,10 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
      * triplets; setFromTriplets sums duplicate (row,col) contributions. */
     grid.getIteratorTetraedrs(itTetBegin, itTetEnd);
     globalIndex = 0;
+    uint32_t tetCount = 0;
     for(itTet = itTetBegin; itTet != itTetEnd; itTet++)     /* проход по всем тетраэдрам */
     {
+        if((++tetCount & 0x3FF) == 0 && aborted()) return false;   /* cooperative abort */
         indexes.clear();
         validIndexes.clear();
         getLocalMatrixResonator(localMatrixT, localMatrixR, *itTet, epsilonValuesTetraedrs[itTet->getSerialNumber()], indexes);

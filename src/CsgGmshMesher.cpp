@@ -8,12 +8,33 @@
 
 namespace {
 
-/* Configure common meshing options (quiet, target element size). */
+/* Configure common meshing options (quiet, target element size).
+ * meshSize <= 0 selects AUTO sizing: Gmsh picks the element size from the CAD
+ * (curvature of the walls and the helix wire) with a cap derived from the model
+ * bounding box, so no explicit length is needed. Requires the OCC model to be
+ * synchronized first (so the bounding box is available). */
 void applyMeshOptions(double meshSize)
 {
     gmsh::option::setNumber("General.Terminal", 0);
-    gmsh::option::setNumber("Mesh.MeshSizeMin", meshSize * 0.5);
-    gmsh::option::setNumber("Mesh.MeshSizeMax", meshSize);
+    if (meshSize > 0.0) {
+        gmsh::option::setNumber("Mesh.MeshSizeFromCurvature", 0);
+        gmsh::option::setNumber("Mesh.MeshSizeMin", meshSize * 0.5);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", meshSize);
+    } else {
+        /* Auto: ~12 elements around 2*pi of curvature resolves curved features;
+         * cap the size at bboxDiagonal/15 so flat interior regions still get a
+         * handful of elements across. */
+        double x0, y0, z0, x1, y1, z1;
+        gmsh::model::getBoundingBox(-1, -1, x0, y0, z0, x1, y1, z1);
+        double diag = std::sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) +
+                                (z1 - z0) * (z1 - z0));
+        double maxSize = (diag > 0.0) ? diag / 15.0 : 1e22;
+        gmsh::option::setNumber("Mesh.MeshSizeFromCurvature", 12);
+        gmsh::option::setNumber("Mesh.MeshSizeExtendFromBoundary", 1);
+        gmsh::option::setNumber("Mesh.MeshSizeFromPoints", 1);
+        gmsh::option::setNumber("Mesh.MeshSizeMin", 0.0);
+        gmsh::option::setNumber("Mesh.MeshSizeMax", maxSize);
+    }
     /* Delaunay 3D is robust and fast for these simple CSG solids. */
     gmsh::option::setNumber("Mesh.Algorithm3D", 1);
     /* Optimize element quality: sliver tetrahedra near curved (faceted) walls

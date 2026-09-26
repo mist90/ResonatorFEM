@@ -4,6 +4,7 @@
 #include <array>
 #include <set>
 #include <utility>
+#include <atomic>
 #include <QObject>
 #include "MicroGrid.h"
 #include "MicroNode.h"
@@ -53,6 +54,10 @@ public:
     void            setGradDivPenalty(double factor);
     /* Tree-cotree gauging — experimental, off by default (see MicroEngine.cpp). */
     void            setGauge(bool enable);
+    /* Cooperative abort: point at a flag the caller can raise from another thread;
+     * the matrix-assembly loop polls it and bails out (calculateSync returns false). */
+    void            setAbortFlag(const std::atomic<bool>* flag) { abortFlag = flag; }
+    bool            aborted() const { return abortFlag && abortFlag->load(std::memory_order_relaxed); }
 
     bool            getEighValues(std::vector<double>& eighValues);
     /* Reconstruct the basis coefficients of eigenmode `numEighVal` (call before
@@ -100,6 +105,8 @@ private:
     std::set<std::pair<uint32_t, uint32_t> > gaugeEdges;
     /* Grad-div penalty weight factor (0 = off). */
     double          penaltyFactor;
+    /* Cooperative-abort flag (not owned); null = never aborts. */
+    const std::atomic<bool>* abortFlag = nullptr;
 };
 
 #endif // MICROENGINE_H
