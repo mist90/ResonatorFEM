@@ -42,9 +42,6 @@ modes:
 ./build/resonator_cli spiral 0.5 0.5 2 0.12 0.12 0.18   # spiral core
 ```
 
-See `docs/PLAN.md` (design + FEM↔mesh contract) and `docs/RESULTS.md` (validation
-results, numerical findings, and known limitations).
-
 ## GUI
 
 `ResonatorFEM` is a Qt + **VTK** app: pick the cavity and core shapes from
@@ -58,13 +55,6 @@ The VTK view has three independently toggleable layers (checkboxes):
   with a scalar bar, *on* by default (click a frequency to switch modes);
 - **Mesh** — the tetrahedral wireframe, *off* by default.
 
-## Status
-
-Working end to end: geometry → Gmsh/OCC mesh → edge-element FEM → grad-div-gauged
-sparse eigensolve → GUI. Cavities validated against analytic modes (cyl −0.3%,
-box −0.5%, coax +0.8%); the spiral fundamental converges to the helical
-quarter-wave estimate. Remaining polish (spiral gauge residual on curved walls,
-off-thread solve, CI) is tracked in `docs/RESULTS.md`.
 
 ## License
 
