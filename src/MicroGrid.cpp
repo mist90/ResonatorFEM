@@ -122,7 +122,6 @@ bool MicroGrid::loadTetraMesh(const FemMesh &mesh)
         MicroTetraedr tet;
         for(uint32_t k = 0; k < 4; k++)
             tet.nodes(k) = nodeIt[t[k]];
-        if(i < mesh.tetRegion.size()) tet.setRegion(mesh.tetRegion[i]);
         listTetraedr.push_back(tet);
         ListMicroTetraedr::iterator it = listTetraedr.end();
         --it;

@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <exception>
 #include <cmath>
-#include <set>
 #include <unordered_map>
 
 namespace {
@@ -51,10 +50,9 @@ void applyMeshOptions(double meshSize, double autoQuality = 12.0)
 
 /* Extract the current (already-generated) 3D mesh into `out`.
  * Node tags from Gmsh are arbitrary/1-based; we remap them to dense 0-based
- * indices. Tets in a volume whose OCC tag is in `dielectricTags` get region 1
- * (a dielectric solid); all others get region 0 (the vacuum fill). */
-bool extractCurrentMesh(FemMesh& out, std::string* err,
-                        const std::set<int>& dielectricTags = std::set<int>())
+ * indices. Each volume entity contributes its tets with a distinct region tag
+ * (0,1,2,... in entity order) so the FEM layer can assign per-region material. */
+bool extractCurrentMesh(FemMesh& out, std::string* err)
 {
     out.clear();
 
@@ -80,8 +78,8 @@ bool extractCurrentMesh(FemMesh& out, std::string* err,
      * tags follow the CSG solids. */
     std::vector<std::pair<int, int> > volumes;
     gmsh::model::getEntities(volumes, 3);
+    int region = 0;
     for (const auto& v : volumes) {
-        int region = dielectricTags.count(v.second) ? 1 : 0;
         std::vector<std::size_t> elemTags, elemNodeTags;
         gmsh::model::mesh::getElementsByType(4, elemTags, elemNodeTags, v.second);
         const std::size_t nTet = elemTags.size();
@@ -92,6 +90,7 @@ bool extractCurrentMesh(FemMesh& out, std::string* err,
             out.tets.push_back(tet);
             out.tetRegion.push_back(region);
         }
+        ++region;
     }
 
     if (out.tets.empty()) {
@@ -291,29 +290,16 @@ bool CsgGmshMesher::buildResonator(const ResonatorSpec& s, FemMesh& out, std::st
             }
         }
 
-        std::set<int> dielectricTags;
         if (core >= 0) {
+            /* Metal core: subtract it -> its boundary becomes a PEC wall. */
             gmsh::vectorpair outDimTags;
             std::vector<gmsh::vectorpair> outDimTagsMap;
-            if (s.coreEpsilon > 1.0) {
-                /* Dielectric core: fragment (don't remove it) so the cavity fill
-                 * and the core become conformal volumes sharing the interface.
-                 * outDimTagsMap[1] holds the fragments of the core (the tool). */
-                gmsh::model::occ::fragment({ {3, cavity} }, { {3, core} },
-                                           outDimTags, outDimTagsMap);
-                if (outDimTagsMap.size() >= 2)
-                    for (const auto& d : outDimTagsMap[1])
-                        if (d.first == 3) dielectricTags.insert(d.second);
-            } else {
-                /* Metal core: subtract it -> its boundary becomes a PEC wall. */
-                gmsh::model::occ::cut({ {3, cavity} }, { {3, core} },
-                                      outDimTags, outDimTagsMap);
-            }
+            gmsh::model::occ::cut({ {3, cavity} }, { {3, core} }, outDimTags, outDimTagsMap);
         }
         gmsh::model::occ::synchronize();
         applyMeshOptions(s.meshSize, s.autoQuality);
         gmsh::model::mesh::generate(3);
-        bool ok = extractCurrentMesh(out, err, dielectricTags);
+        bool ok = extractCurrentMesh(out, err);
         gmsh::clear();
         gmsh::finalize();
         return ok;

@@ -138,16 +138,6 @@ uint32_t MicroTetraedr::getSerialNumber()
     return _serialNumber;
 }
 
-void MicroTetraedr::setRegion(int region)
-{
-    _region = region;
-}
-
-int MicroTetraedr::getRegion()
-{
-    return _region;
-}
-
 /* Методы для реализации МКЭ */
 
 uint32_t MicroTetraedr::getNumBeginEdge(uint32_t numEdge)

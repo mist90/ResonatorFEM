@@ -93,9 +93,6 @@ MainDialog::MainDialog()
                             "curvature refinement. Higher = finer / more accurate.");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
-    coreEpsEdit  = field("1");
-    coreEpsEdit->setToolTip("Relative permittivity of the core.\n"
-                            "1 = metal core (PEC, subtracted); >1 = dielectric core.");
     fillEpsEdit  = field("1");
     fillEpsEdit->setToolTip("Relative permittivity of the medium filling the cavity\n"
                             "between the core and the walls. 1 = vacuum.");
@@ -129,7 +126,6 @@ MainDialog::MainDialog()
     solveForm->addRow("auto quality (higher=finer)", qualityEdit);
     solveForm->addRow("mesh size (m)", meshSizeEdit);
     solveForm->addRow("fill εᵣ (1=vacuum)", fillEpsEdit);
-    solveForm->addRow("core εᵣ (1=metal)", coreEpsEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
     controls->addLayout(solveForm);
@@ -204,7 +200,6 @@ void MainDialog::coreChanged()
     coreCylBox->setVisible(c == ResonatorSpec::CORE_CYLINDER);
     coreBoxBox->setVisible(c == ResonatorSpec::CORE_BOX);
     coreSpiralBox->setVisible(c == ResonatorSpec::CORE_SPIRAL);
-    coreEpsEdit->setEnabled(c != ResonatorSpec::CORE_NONE);   /* material only if a core exists */
 }
 
 ResonatorSpec MainDialog::readSpec()
@@ -233,7 +228,6 @@ ResonatorSpec MainDialog::readSpec()
     } else {
         s.meshSize = meshSizeEdit->text().toDouble();
     }
-    s.coreEpsilon = (s.core == ResonatorSpec::CORE_NONE) ? 1.0 : coreEpsEdit->text().toDouble();
     s.fillEpsilon = fillEpsEdit->text().toDouble();
     return s;
 }
@@ -347,7 +341,6 @@ void MainDialog::computeSlot()
         r.tets  = mesh.tets.size();
         engine->setResonatorMode(true);
         engine->setGradDivPenalty(penalty);
-        engine->setCorePermittivity(spec.coreEpsilon);
         engine->setFillPermittivity(spec.fillEpsilon);
         engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
         if (!engine->generateFromMesh(mesh)) {

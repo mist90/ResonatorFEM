@@ -52,10 +52,7 @@ public:
     /* Grad-div penalty (factor * meanDiag(S)): lifts the gradient null space so the
      * physical modes become the smallest eigenvalues. 0 disables it. */
     void            setGradDivPenalty(double factor);
-    /* Relative permittivity of the dielectric core (region > 0). 1 = none. */
-    void            setCorePermittivity(double eps) { corePermittivity = eps; }
-    /* Relative permittivity of the fill medium between core and walls (region 0).
-     * 1 = vacuum. */
+    /* Relative permittivity of the fill medium between core and walls. 1 = vacuum. */
     void            setFillPermittivity(double eps) { fillPermittivity = eps; }
     /* Tree-cotree gauging — experimental, off by default (see MicroEngine.cpp). */
     void            setGauge(bool enable);
@@ -110,9 +107,7 @@ private:
     std::set<std::pair<uint32_t, uint32_t> > gaugeEdges;
     /* Grad-div penalty weight factor (0 = off). */
     double          penaltyFactor;
-    /* Relative permittivity of the core (region > 0) and of the fill medium
-     * between core and walls (region 0); 1 = vacuum. */
-    double          corePermittivity = 1.0;
+    /* Relative permittivity of the fill medium between core and walls; 1 = vacuum. */
     double          fillPermittivity = 1.0;
     /* Cooperative-abort flag (not owned); null = never aborts. */
     const std::atomic<bool>* abortFlag = nullptr;

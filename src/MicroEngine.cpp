@@ -242,22 +242,14 @@ void MicroEngine::clear()
 
 bool MicroEngine::_calculate()
 {
-    /* Per-element relative permittivity: region 0 (the fill medium between core
-     * and walls) takes fillPermittivity; any region > 0 is a dielectric CSG solid
-     * (the core) and takes corePermittivity. Both default to 1 (vacuum). */
+    /* Every tetrahedron takes the fill-medium permittivity (the core is metal, so
+     * the whole meshed domain is the fill between core and walls). 1 = vacuum. */
     std::vector<double> epsilonValuesTetraedrs;
 
     if(!pointGenerate) return false;
     basisKoef.clear();
     emit startCreateMatrix();
     epsilonValuesTetraedrs.resize(grid.getNumTetraedrs(), fillPermittivity);
-    {
-        ListMicroTetraedr::iterator it, itBegin, itEnd;
-        grid.getIteratorTetraedrs(itBegin, itEnd);
-        for(it = itBegin; it != itEnd; ++it)
-            if(it->getRegion() > 0)
-                epsilonValuesTetraedrs[it->getSerialNumber()] = corePermittivity;
-    }
     rootsGlobalMatrix.clear();
     globalTable.clear();
     eighValue.clear();
