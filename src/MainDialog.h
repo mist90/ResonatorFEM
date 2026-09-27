@@ -52,7 +52,7 @@ private:
     QLineEdit   *helixREdit, *pitchEdit, *turnsEdit, *ellAEdit, *ellBEdit;
     QGroupBox   *cavCylBox, *cavBoxBox, *coreCylBox, *coreBoxBox, *coreSpiralBox;
 
-    QLineEdit   *meshSizeEdit, *qualityEdit, *numModesEdit, *penaltyEdit;
+    QLineEdit   *meshSizeEdit, *qualityEdit, *numModesEdit, *penaltyEdit, *coreEpsEdit;
     QCheckBox   *autoSizeCheck;
     QCheckBox   *solidsCheck, *fieldsCheck, *meshCheck, *mesh3dCheck;
     QPushButton *buildMeshButton, *computeButton, *abortButton, *saveImageButton;

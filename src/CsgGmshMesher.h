@@ -23,6 +23,9 @@ struct ResonatorSpec
 
     double meshSize = 0.0;      /* target tet edge length; <=0 => automatic sizing   */
     double autoQuality = 12.0;  /* auto mode: elements per 2*pi of curvature (finer↑) */
+    /* Core material: 1 = metal (subtracted -> PEC hole); >1 = dielectric with this
+     * relative permittivity (kept as a conformal meshed region, tag 1). */
+    double coreEpsilon = 1.0;
 };
 
 /* Geometry + meshing backend built on Gmsh's OpenCASCADE (occ) kernel.

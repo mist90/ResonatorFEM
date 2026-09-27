@@ -55,6 +55,10 @@ public:
     double                          volume();
     void                            setSerialNumber(uint32_t number);
     uint32_t                        getSerialNumber();
+    /* Material/region tag (0 = default vacuum; >0 = a CSG solid, e.g. a
+     * dielectric core) used to pick the per-element permittivity. */
+    void                            setRegion(int region);
+    int                             getRegion();
     /* Edge enumeration (6 edges) for FEM assembly. */
     uint32_t                        getNumBeginEdge(uint32_t numEdge);
     uint32_t                        getNumEndEdge(uint32_t numEdge);
@@ -67,6 +71,7 @@ private:
     ListMicroTetraedr::iterator         _tetraedrs[4];
     uint32_t                            _flags[4];
     uint32_t                            _serialNumber;
+    int                                 _region = 0;
 };
 
 /* An "empty" tetrahedron iterator sentinel (used for missing neighbours). */
