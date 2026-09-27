@@ -96,6 +96,9 @@ MainDialog::MainDialog()
     coreEpsEdit  = field("1");
     coreEpsEdit->setToolTip("Relative permittivity of the core.\n"
                             "1 = metal core (PEC, subtracted); >1 = dielectric core.");
+    fillEpsEdit  = field("1");
+    fillEpsEdit->setToolTip("Relative permittivity of the medium filling the cavity\n"
+                            "between the core and the walls. 1 = vacuum.");
 
     solidsCheck = new QCheckBox("Solids");  solidsCheck->setChecked(true);
     fieldsCheck = new QCheckBox("Fields");  fieldsCheck->setChecked(true);
@@ -125,6 +128,7 @@ MainDialog::MainDialog()
     solveForm->addRow(autoSizeCheck);
     solveForm->addRow("auto quality (higher=finer)", qualityEdit);
     solveForm->addRow("mesh size (m)", meshSizeEdit);
+    solveForm->addRow("fill εᵣ (1=vacuum)", fillEpsEdit);
     solveForm->addRow("core εᵣ (1=metal)", coreEpsEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
@@ -230,6 +234,7 @@ ResonatorSpec MainDialog::readSpec()
         s.meshSize = meshSizeEdit->text().toDouble();
     }
     s.coreEpsilon = (s.core == ResonatorSpec::CORE_NONE) ? 1.0 : coreEpsEdit->text().toDouble();
+    s.fillEpsilon = fillEpsEdit->text().toDouble();
     return s;
 }
 
@@ -343,6 +348,7 @@ void MainDialog::computeSlot()
         engine->setResonatorMode(true);
         engine->setGradDivPenalty(penalty);
         engine->setCorePermittivity(spec.coreEpsilon);
+        engine->setFillPermittivity(spec.fillEpsilon);
         engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
         if (!engine->generateFromMesh(mesh)) {
             if (abortReq.load()) { r.cancelled = true; return r; }

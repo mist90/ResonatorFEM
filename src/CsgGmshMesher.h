@@ -26,6 +26,9 @@ struct ResonatorSpec
     /* Core material: 1 = metal (subtracted -> PEC hole); >1 = dielectric with this
      * relative permittivity (kept as a conformal meshed region, tag 1). */
     double coreEpsilon = 1.0;
+    /* Fill medium between core and walls (region 0); 1 = vacuum. Material only,
+     * does not affect the geometry/mesh. */
+    double fillEpsilon = 1.0;
 };
 
 /* Geometry + meshing backend built on Gmsh's OpenCASCADE (occ) kernel.
