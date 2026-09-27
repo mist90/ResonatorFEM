@@ -47,7 +47,7 @@ target_link_libraries(resonator_cli PRIVATE resonator_core)
 find_package(MPI REQUIRED)
 find_package(VTK 9 REQUIRED COMPONENTS
   CommonCore CommonDataModel
-  FiltersCore FiltersGeometry FiltersSources
+  FiltersCore FiltersExtraction FiltersGeometry FiltersSources
   RenderingCore RenderingOpenGL2 RenderingAnnotation
   InteractionStyle GUISupportQt
 )

@@ -6,6 +6,7 @@
 #include <vtkTetra.h>
 #include <vtkCellType.h>
 #include <vtkGeometryFilter.h>
+#include <vtkExtractEdges.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkDataSetMapper.h>
@@ -92,15 +93,16 @@ void ResonatorView::setMesh(const FemMesh& mesh)
     meshActor->SetVisibility(false);   /* mesh layer off by default */
     renderer->AddActor(meshActor);
 
-    /* 3D mesh: exterior surface triangulation drawn as edges only — no filled
-     * faces, so it reads as a transparent net you can see through (distinct from
-     * the MESH layer, which is the full volumetric wireframe incl. interior edges). */
+    /* 3D mesh: EVERY tetrahedron edge, interior included (vtkExtractEdges pulls
+     * all cell edges, not just the outer surface), so you see the full volumetric
+     * mesh — the MESH layer above shows only the exterior surface net. */
+    vtkSmartPointer<vtkExtractEdges> edges = vtkSmartPointer<vtkExtractEdges>::New();
+    edges->SetInputData(ug);
     vtkSmartPointer<vtkPolyDataMapper> m3 = vtkSmartPointer<vtkPolyDataMapper>::New();
-    m3->SetInputConnection(geo->GetOutputPort());
+    m3->SetInputConnection(edges->GetOutputPort());
     m3->ScalarVisibilityOff();
     mesh3dActor = vtkSmartPointer<vtkActor>::New();
     mesh3dActor->SetMapper(m3);
-    mesh3dActor->GetProperty()->SetRepresentationToWireframe();
     mesh3dActor->GetProperty()->SetColor(0.20, 0.30, 0.20);
     mesh3dActor->GetProperty()->SetLineWidth(0.5);
     mesh3dActor->SetVisibility(false);   /* off by default */
