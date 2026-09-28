@@ -79,6 +79,7 @@ private slots:
     void cavityChanged();
     void coreChanged();
     void autoSizeToggled();   /* switch between explicit size and auto quality */
+    void solverChanged();     /* grey out the penalty when AME is selected */
     void layerToggled();
     void modeSelected(int row);
     void saveImageSlot();

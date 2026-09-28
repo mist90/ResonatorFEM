@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)   # find_library/find_path REQUIRED
 project(ResonatorFEM LANGUAGES C CXX)   # C needed so find_package(MPI) defines MPI::MPI_C (VTK)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -16,6 +16,10 @@ find_package(Qt5 REQUIRED COMPONENTS Core Widgets Concurrent)
 find_library(GMSH_LIB   gmsh   REQUIRED)
 find_library(LAPACK_LIB lapack REQUIRED)
 find_library(BLAS_LIB   blas   REQUIRED)
+# hypre (AME eigensolver + AMS preconditioner); Ubuntu's libhypre-dev is MPI-based.
+find_path(HYPRE_INCLUDE_DIR HYPRE.h PATH_SUFFIXES hypre REQUIRED)
+find_library(HYPRE_LIB HYPRE REQUIRED)
+find_package(MPI REQUIRED)
 
 # --- reusable core: FEM assembly + math + eigen-solve + mesh backend --------
 # Depends only on Qt Core (MicroEngine is a QObject); no GUI/GL.
@@ -26,16 +30,21 @@ add_library(resonator_core STATIC
   src/MicroEngine.cpp
   src/MathVector3D.cpp
   src/MathEighValues.cpp
+  src/MathEighValuesAME.cpp
   src/CsgGmshMesher.cpp
 )
 target_include_directories(resonator_core PUBLIC
   ${CMAKE_SOURCE_DIR}/src
   /usr/include/eigen3
+  ${HYPRE_INCLUDE_DIR}
 )
 target_link_libraries(resonator_core PUBLIC
   Qt5::Core
   ${GMSH_LIB} ${LAPACK_LIB} ${BLAS_LIB}
+  ${HYPRE_LIB} MPI::MPI_C
 )
+# Only the MPI C API is used; don't pull in the deprecated MPI C++ bindings.
+target_compile_definitions(resonator_core PRIVATE OMPI_SKIP_MPICXX MPICH_SKIP_MPICXX)
 
 # --- headless validation harness -------------------------------------------
 add_executable(resonator_cli src/cli_resonator.cpp)
@@ -43,8 +52,7 @@ target_link_libraries(resonator_cli PRIVATE resonator_core)
 
 # --- Qt + VTK GUI application ----------------------------------------------
 # VTK 9.1's packaged config references the MPI::MPI_C imported target, so MPI
-# must be found first.
-find_package(MPI REQUIRED)
+# must be found first (done above for hypre).
 find_package(VTK 9 REQUIRED COMPONENTS
   CommonCore CommonDataModel
   FiltersCore FiltersExtraction FiltersGeometry FiltersSources

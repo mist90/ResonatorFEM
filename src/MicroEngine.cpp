@@ -64,7 +64,7 @@ MicroEngine::MicroEngine()
     useGauge = false;
     penaltyFactor = 0.0;
     const char* solver = std::getenv("RESONATOR_SOLVER");
-    eigenSolver = (solver && std::strcmp(solver, "lobpcg") == 0) ? EIGSOLVER_LOBPCG
+    eigenSolver = (solver && std::strcmp(solver, "ame") == 0) ? EIGSOLVER_AME
                                                                  : EIGSOLVER_SHIFT_INVERT;
 }
 
@@ -349,7 +349,8 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     std::vector<double> dofLen;
     std::vector<char> interiorNode;
     double penaltyS = 0.0;
-    if(penaltyFactor > 0.0 && widthGlobalMatrix > 0)
+    const bool useAME = (eigenSolver == EIGSOLVER_AME) && !useGauge;
+    if((penaltyFactor > 0.0 || useAME) && widthGlobalMatrix > 0)
     {
         dofNodes.assign(widthGlobalMatrix, std::make_pair(UINT32_MAX, UINT32_MAX));
         dofLen.assign(widthGlobalMatrix, 1.0);
@@ -385,18 +386,41 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     epsilonValuesTetraedrs.clear();
     /* решение СЛАУ и нахождение собственных значений */
     emit startSolveMatrix();
-    /* решение задачи TX=k^2 RX. With the grad-div penalty the gradient null space
-     * is lifted, so the physical modes are the smallest eigenvalues; otherwise
-     * sparse shift-invert around a target, or the dense full-spectrum fallback. */
-    bool solved;
-    if(penaltyS > 0.0)
-        solved = MathEighValVectorShiftInvertGauged(globalMatrixT, globalMatrixR, dofNodes, dofLen,
-                     interiorNode, grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
-                     solveNev, eigenSolver, eighValue, rootsGlobalMatrix);
-    else if(solveSigmaK2 >= 0.0)
-        solved = MathEighValVectorShiftInvert(globalMatrixT, globalMatrixR, solveSigmaK2, solveNev, eighValue, rootsGlobalMatrix);
-    else
-        solved = MathEighValVector(globalMatrixT, globalMatrixR, eighValue, rootsGlobalMatrix);
+    /* решение задачи TX=k^2 RX. hypre AME (if selected) removes the gradient null
+     * space itself. Otherwise, or if AME fails: with the grad-div penalty the null
+     * space is lifted, so the physical modes are the smallest eigenvalues; without
+     * it, sparse shift-invert around a target, or the dense full-spectrum solve. */
+    bool solved = false;
+    if(useAME && widthGlobalMatrix > 0)
+    {
+        /* hypre AME needs the whole edge graph: free DOFs, the eliminated PEC
+         * edges, and vertex coordinates (tree-cotree gauging is not supported,
+         * hence !useGauge above). */
+        std::vector<std::pair<uint32_t, uint32_t> > pecEdges;
+        pecEdges.reserve(tableMetallEdges.size());
+        for(i = 0; i < tableMetallEdges.size(); i++)
+            pecEdges.push_back(std::make_pair(tableMetallEdges[i].getNode1()->getSerialNumber(),
+                                              tableMetallEdges[i].getNode2()->getSerialNumber()));
+        std::vector<std::array<double, 3> > nodeCoords(grid.getNumNodes());
+        std::list<MicroNode>::iterator itn, itnBegin, itnEnd;
+        grid.getIteratorNodes(itnBegin, itnEnd);
+        for(itn = itnBegin; itn != itnEnd; ++itn)
+            nodeCoords[itn->getSerialNumber()] = { itn->point().getX(), itn->point().getY(), itn->point().getZ() };
+        solved = MathEighValVectorAME(globalMatrixT, globalMatrixR, dofNodes, dofLen, pecEdges,
+                                      nodeCoords, solveNev, eighValue, rootsGlobalMatrix);
+        if(!solved) fprintf(stderr, "ame failed -> falling back to shift-invert\n");
+    }
+    if(!solved)
+    {
+        if(penaltyS > 0.0)
+            solved = MathEighValVectorShiftInvertGauged(globalMatrixT, globalMatrixR, dofNodes, dofLen,
+                         interiorNode, grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
+                         solveNev, eighValue, rootsGlobalMatrix);
+        else if(solveSigmaK2 >= 0.0)
+            solved = MathEighValVectorShiftInvert(globalMatrixT, globalMatrixR, solveSigmaK2, solveNev, eighValue, rootsGlobalMatrix);
+        else
+            solved = MathEighValVector(globalMatrixT, globalMatrixR, eighValue, rootsGlobalMatrix);
+    }
     if(!solved)
     {
         return false;

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "CsgGmshMesher.h"
+#include "MathEighValues.h"
 #include "MicroEngine.h"
 
 static const double C_LIGHT = 299792458.0;         /* m/s */
@@ -33,6 +34,7 @@ static double k2_to_MHz(double k2)
 
 int main(int argc, char** argv)
 {
+    EigenSolverRuntime solverRuntime(&argc, &argv);   /* MPI + hypre, for the AME solver */
     QCoreApplication app(argc, argv);
 
     std::string shape = (argc > 1) ? argv[1] : "cyl";

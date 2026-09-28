@@ -94,12 +94,15 @@ MainDialog::MainDialog()
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
     solverCombo = new QComboBox();   /* index == EigenSolverKind */
-    solverCombo->addItems({ "Shift-invert", "LOBPCG" });
+    solverCombo->addItems({ "Shift-invert", "hypre AME" });
     solverCombo->setCurrentIndex(engine->getEigenSolver());
-    solverCombo->setToolTip("Shift-invert: sparse direct factorization — robust, but\n"
-                            "memory-heavy on fine meshes.\n"
-                            "LOBPCG: iterative, low memory; falls back to shift-invert\n"
-                            "if it does not converge. Used when penalty factor > 0.");
+    solverCombo->setToolTip("Shift-invert: sparse direct factorization of the\n"
+                            "grad-div-penalized operator — robust, but memory-heavy\n"
+                            "on fine meshes.\n"
+                            "hypre AME: iterative LOBPCG with the AMS (auxiliary-space\n"
+                            "Maxwell) preconditioner — low memory, scales to fine\n"
+                            "meshes. Removes gradient modes itself, so the penalty\n"
+                            "factor is not used. Falls back to shift-invert on failure.");
     fillEpsEdit  = field("1");
     fillEpsEdit->setToolTip("Relative permittivity of the medium filling the cavity\n"
                             "between the core and the walls. 1 = vacuum.");
@@ -174,6 +177,7 @@ MainDialog::MainDialog()
     connect(computeButton,   SIGNAL(clicked()), this, SLOT(computeSlot()));
     connect(abortButton,     SIGNAL(clicked()), this, SLOT(abortSlot()));
     connect(autoSizeCheck,   SIGNAL(toggled(bool)), this, SLOT(autoSizeToggled()));
+    connect(solverCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(solverChanged()));
     connect(saveImageButton, SIGNAL(clicked()), this, SLOT(saveImageSlot()));
     connect(solidsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
     connect(fieldsCheck, SIGNAL(toggled(bool)), this, SLOT(layerToggled()));
@@ -190,6 +194,7 @@ MainDialog::MainDialog()
     cavityChanged();
     coreChanged();
     autoSizeToggled();
+    solverChanged();
     resize(1060, 660);
 
     if (std::getenv("RESONATOR_AUTORUN")) QTimer::singleShot(400, this, SLOT(autoRun()));
@@ -253,6 +258,13 @@ void MainDialog::autoSizeToggled()
     bool a = autoSizeCheck->isChecked();
     qualityEdit->setEnabled(a);
     meshSizeEdit->setEnabled(!a);
+}
+
+/* AME handles the gradient null space itself; the penalty applies only to
+ * shift-invert. */
+void MainDialog::solverChanged()
+{
+    penaltyEdit->setEnabled(solverCombo->currentIndex() != EIGSOLVER_AME);
 }
 
 void MainDialog::layerToggled()
@@ -397,8 +409,11 @@ void MainDialog::workerFinished()
         std::vector<std::pair<double, int> > modes;
         for (int i = 0; i < (int)r.k2.size(); ++i) modes.push_back(std::make_pair(r.k2[i], i));
         std::sort(modes.begin(), modes.end());
+        /* Skip static (k^2 ~ 0) modes, e.g. the electrostatic mode of a floating
+         * core. Relative threshold: k^2 scales as 1/length^2. */
+        const double k2Zero = modes.empty() ? 0.0 : 1e-8 * std::fabs(modes.back().first);
         for (const auto& m : modes) {
-            if (m.first <= 0.0) continue;
+            if (m.first <= k2Zero) continue;
             double f = C_LIGHT * std::sqrt(m.first) / (2.0 * M_PI) / 1.0e6;
             QListWidgetItem* it = new QListWidgetItem(
                 QString("%1 MHz   (k^2 = %2)").arg(f, 0, 'f', 3).arg(m.first, 0, 'f', 5));

@@ -2,14 +2,10 @@
 #include <vector>
 #include <cstddef>
 #include <cstdio>
-#include <cstring>
 #include <algorithm>
-#include <cstdlib>
 #include <cmath>
-#include <random>
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
-#include <Eigen/IterativeLinearSolvers>
 #include <Spectra/SymGEigsShiftSolver.h>
 #include <Spectra/MatOp/SymShiftInvert.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
@@ -117,125 +113,6 @@ static bool shiftInvertCore(const Eigen::SparseMatrix<double>& Ae,
     return false;
 }
 
-/* Truncated Rayleigh-Ritz: the `k` smallest Ritz pairs of the small dense pencil
- * (gramA, gramB) on an m-dimensional subspace, dropping directions where gramB is
- * near-singular (the [X W P] basis becomes linearly dependent as LOBPCG
- * converges). Returns Ritz values `theta` and coefficients `C` (m x k') with
- * k' = min(k, numeric rank); Ritz vectors are V*C and are B-orthonormal. */
-static bool truncatedRR(const Eigen::MatrixXd& gramA, const Eigen::MatrixXd& gramB,
-                        int k, Eigen::VectorXd& theta, Eigen::MatrixXd& C)
-{
-    const int m = (int)gramA.rows();
-    if(m < 1) return false;
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> esB(gramB);
-    if(esB.info() != Eigen::Success) return false;
-    const Eigen::VectorXd& bev = esB.eigenvalues();     /* ascending */
-    double bmax = bev(m - 1);
-    if(bmax <= 0.0) return false;
-    double thr = bmax * 1e-12;
-    std::vector<int> keep;
-    for(int i = 0; i < m; i++) if(bev(i) > thr) keep.push_back(i);
-    int r = (int)keep.size();
-    if(r < 1) return false;
-    /* T maps the kept gramB-eigenbasis to a gramB-orthonormal basis. */
-    Eigen::MatrixXd T(m, r);
-    for(int j = 0; j < r; j++)
-        T.col(j) = esB.eigenvectors().col(keep[j]) / std::sqrt(bev(keep[j]));
-    Eigen::MatrixXd Ared = T.transpose() * gramA * T;
-    Ared = 0.5 * (Ared + Ared.transpose());
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> esA(Ared);
-    if(esA.info() != Eigen::Success) return false;
-    int kk = std::min(k, r);
-    theta = esA.eigenvalues().head(kk);
-    C = T * esA.eigenvectors().leftCols(kk);            /* m x kk */
-    return true;
-}
-
-/* Block LOBPCG: the `nev` smallest eigenpairs of A x = lambda B x with A, B SPD.
- * Iterative and matrix-free apart from an incomplete-Cholesky preconditioner on A
- * (falls back to Jacobi) — no direct factorization, so memory stays ~O(nnz(A))
- * instead of the shift-invert factor fill-in. Meant for the grad-div-penalized
- * operator Aeff, which is SPD and far more elliptic than raw curl-curl. */
-static bool lobpcgSmallest(const Eigen::SparseMatrix<double>& A,
-                           const Eigen::SparseMatrix<double>& B,
-                           int nev, int maxIter, double tol,
-                           Eigen::VectorXd& vals, Eigen::MatrixXd& vecs)
-{
-    const int n = (int)A.rows();
-    int k = nev;
-    if(k > n / 3) k = n / 3;
-    if(k < 1) return false;
-
-    /* Preconditioner K ~ A^-1: incomplete Cholesky, else Jacobi. */
-    Eigen::IncompleteCholesky<double> ic;
-    ic.compute(A);
-    bool haveIC = (ic.info() == Eigen::Success);
-    Eigen::VectorXd invdiag;
-    if(!haveIC) {
-        invdiag.resize(n);
-        for(int i = 0; i < n; i++) { double d = A.coeff(i, i); invdiag[i] = (d > 1e-30) ? 1.0 / d : 1.0; }
-        std::fprintf(stderr, "lobpcg: IncompleteCholesky failed -> Jacobi preconditioner\n");
-    }
-    auto precond = [&](const Eigen::MatrixXd& Rm) -> Eigen::MatrixXd {
-        Eigen::MatrixXd Wm(n, Rm.cols());
-        if(haveIC) for(int c = 0; c < Rm.cols(); c++) Wm.col(c) = ic.solve(Rm.col(c));
-        else       for(int c = 0; c < Rm.cols(); c++) Wm.col(c) = invdiag.cwiseProduct(Rm.col(c));
-        return Wm;
-    };
-
-    /* Deterministic random start (mt19937 fixed seed: reproducible). */
-    std::mt19937 gen(1234567u);
-    std::normal_distribution<double> nd(0.0, 1.0);
-    Eigen::MatrixXd X(n, k);
-    for(int j = 0; j < k; j++) for(int i = 0; i < n; i++) X(i, j) = nd(gen);
-
-    Eigen::MatrixXd AX = A * X, BX = B * X;
-    Eigen::VectorXd theta; Eigen::MatrixXd C;
-    {
-        Eigen::MatrixXd gA = X.transpose() * AX, gB = X.transpose() * BX;
-        gA = 0.5 * (gA + gA.transpose()); gB = 0.5 * (gB + gB.transpose());
-        if(!truncatedRR(gA, gB, k, theta, C)) return false;
-        X = X * C; AX = AX * C; BX = BX * C;
-    }
-    int kc = (int)theta.size();
-    Eigen::VectorXd Lam = theta;
-    Eigen::MatrixXd R = AX - BX * Lam.asDiagonal();
-    Eigen::MatrixXd P;   /* search direction block (0 cols initially) */
-
-    int iter = 0;
-    double maxrel = 1.0;
-    for(; iter < maxIter; ++iter) {
-        maxrel = 0.0;
-        for(int c = 0; c < kc; c++)
-            maxrel = std::max(maxrel, R.col(c).norm() / (AX.col(c).norm() + 1e-30));
-        if(maxrel < tol) break;
-
-        Eigen::MatrixXd W = precond(R);
-        int p = (int)P.cols();
-        int m = 2 * kc + p;
-        Eigen::MatrixXd V(n, m);
-        V.leftCols(kc) = X;
-        V.middleCols(kc, kc) = W;
-        if(p > 0) V.rightCols(p) = P;
-        Eigen::MatrixXd AV = A * V, BV = B * V;
-        Eigen::MatrixXd gA = V.transpose() * AV, gB = V.transpose() * BV;
-        gA = 0.5 * (gA + gA.transpose()); gB = 0.5 * (gB + gB.transpose());
-        if(!truncatedRR(gA, gB, kc, theta, C)) break;   /* keep last good X */
-        int knew = (int)theta.size();
-        Eigen::MatrixXd Cwp = C.bottomRows(m - kc);      /* [W P] contribution */
-        P  = V.rightCols(m - kc) * Cwp;                  /* new search direction */
-        X  = V * C; AX = AV * C; BX = BV * C;
-        Lam = theta; kc = knew;
-        R = AX - BX * Lam.asDiagonal();
-    }
-    std::fprintf(stderr, "lobpcg: %d iters, %d modes, max rel-resid %.2e (%s), precond=%s\n",
-                 iter, kc, maxrel, maxrel < tol ? "converged" : "NOT converged",
-                 haveIC ? "IC" : "Jacobi");
-    vals = Lam;
-    vecs = X;
-    return kc >= 1;
-}
-
 /* Pack Eigen results into the (eighValue, eigVector[row + mode*n]) layout. */
 static void packResults(const Eigen::VectorXd& vals, const Eigen::MatrixXd& vecs, int n,
                         std::vector<double>& eighValue, std::vector<double>& eigVector)
@@ -271,7 +148,6 @@ bool MathEighValVectorShiftInvertGauged(const Eigen::SparseMatrix<double>& matri
                                         const std::vector<double>& dofLen,
                                         const std::vector<char>& interiorNode,
                                         uint32_t nNodes, double penaltyS, double sigma, int nev,
-                                        EigenSolverKind solver,
                                         std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
     if(matrixA.rows() != matrixA.cols()) return false;
@@ -325,20 +201,6 @@ bool MathEighValVectorShiftInvertGauged(const Eigen::SparseMatrix<double>& matri
 
     Eigen::VectorXd vals;
     Eigen::MatrixXd vecs;
-    /* Solver: Spectra shift-invert (direct factorization, robust but memory-heavy
-     * on fine 3D meshes) or the iterative low-memory LOBPCG, which falls back to
-     * shift-invert if it fails. */
-    if(solver == EIGSOLVER_LOBPCG) {
-        int    maxIter = 800;
-        double tol     = 1e-4;   /* eigenvalue error ~ tol^2, so ~1e-8 — plenty */
-        if(const char* mi = std::getenv("LOBPCG_ITERS")) maxIter = std::atoi(mi);
-        if(const char* tl = std::getenv("LOBPCG_TOL"))   tol     = std::atof(tl);
-        if(lobpcgSmallest(Aeff, Be, nev, maxIter, tol, vals, vecs)) {
-            packResults(vals, vecs, n, eighValue, eigVector);
-            return true;
-        }
-        std::fprintf(stderr, "lobpcg failed -> falling back to shift-invert\n");
-    }
     if(!shiftInvertCore(Aeff, Be, sigma, nev, vals, vecs)) return false;
     packResults(vals, vecs, n, eighValue, eigVector);
     return true;

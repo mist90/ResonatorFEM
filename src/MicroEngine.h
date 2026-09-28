@@ -52,8 +52,8 @@ public:
     /* Grad-div penalty (factor * meanDiag(S)): lifts the gradient null space so the
      * physical modes become the smallest eigenvalues. 0 disables it. */
     void            setGradDivPenalty(double factor);
-    /* Eigensolver for the grad-div penalty path. Defaults to shift-invert, or to
-     * LOBPCG when the environment has RESONATOR_SOLVER=lobpcg. */
+    /* Eigensolver: shift-invert (uses the grad-div penalty) or hypre AME (ignores
+     * it). Defaults to shift-invert, or to AME when RESONATOR_SOLVER=ame. */
     void            setEigenSolver(EigenSolverKind kind) { eigenSolver = kind; }
     EigenSolverKind getEigenSolver() const { return eigenSolver; }
     /* Relative permittivity of the fill medium between core and walls. 1 = vacuum. */
