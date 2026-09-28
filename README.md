@@ -17,13 +17,20 @@ hand-written Delaunay mesher is replaced here by conforming CSG-based meshes.
   cavity). Every exterior face of the meshed `cavity − core` solid becomes a PEC
   wall automatically.
 - **Solvers:** dense LAPACK `dsygv` (small problems, full spectrum) and a sparse
-  **Spectra shift-invert** solver (scales to fine meshes, targets a frequency).
+  **Spectra shift-invert** solver (scales to fine meshes, targets a frequency),
+  plus an iterative low-memory **LOBPCG** alternative. Pick shift-invert or
+  LOBPCG with the *eigensolver* selector in the GUI; `RESONATOR_SOLVER=lobpcg`
+  sets the default (and is the only switch for `resonator_cli`).
 
 ## Build
 
 Requires a C++17 compiler, CMake, and: `libgmsh-dev`, `liblapack-dev`,
 `libblas-dev`, `libeigen3-dev`, `libspectra-dev`, `qtbase5-dev`, `libvtk9-dev`,
 `libvtk9-qt-dev` (VTK also pulls in `libopenmpi-dev`).
+
+Builds on Ubuntu 24.04 (Gmsh 4.12) and Ubuntu 22.04 (Gmsh 4.8). On 22.04,
+`libspectra-dev` is not packaged; install the header-only package from 24.04
+(or the Spectra sources) manually.
 
 ```sh
 cmake -S . -B build -G Ninja

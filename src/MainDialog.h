@@ -44,7 +44,7 @@ private:
     ResonatorView *view;
     FemMesh        mesh;
 
-    QComboBox   *cavityCombo, *coreCombo;
+    QComboBox   *cavityCombo, *coreCombo, *solverCombo;
     QLineEdit   *cavRadiusEdit, *cavHeightEdit;
     QLineEdit   *cavAEdit, *cavBEdit, *cavDEdit;
     QLineEdit   *coreRadiusEdit, *coreHeightEdit;

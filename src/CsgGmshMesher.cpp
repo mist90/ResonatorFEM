@@ -119,12 +119,24 @@ int makeHelixSolid(double cx, double cy, double zBottom,
     int spline = gmsh::model::occ::addBSpline(pts);
     int wire = gmsh::model::occ::addWire({ spline });
 
+    /* Cross-section: ellA along the radial x axis, normal along the helix
+     * tangent at t=0, (0, helixR, tz). Built in the XY plane at the origin and
+     * then rotated/translated into place, because addEllipse's axis arguments
+     * only exist in Gmsh >= 4.9 (Ubuntu 22.04 ships 4.8). OCC also requires the
+     * x radius to be strictly the major one, so equal radii use a circle and
+     * ellA < ellB is built swapped and turned 90 degrees about z. */
+    int ell;
+    if (ellA == ellB) {
+        ell = gmsh::model::occ::addCircle(0, 0, 0, ellA);
+    } else if (ellA > ellB) {
+        ell = gmsh::model::occ::addEllipse(0, 0, 0, ellA, ellB);
+    } else {
+        ell = gmsh::model::occ::addEllipse(0, 0, 0, ellB, ellA);
+        gmsh::model::occ::rotate({ {1, ell} }, 0, 0, 0, 0, 0, 1, M_PI / 2);
+    }
     double tz = pitch / (2.0 * M_PI);
-    double tn = std::sqrt(helixR * helixR + tz * tz);
-    std::vector<double> zAxis = { 0.0, helixR / tn, tz / tn };   /* helix tangent */
-    std::vector<double> xAxis = { 1.0, 0.0, 0.0 };               /* radial        */
-    int ell = gmsh::model::occ::addEllipse(cx + helixR, cy, zBottom, ellA, ellB, -1,
-                                           0.0, 2.0 * M_PI, zAxis, xAxis);
+    gmsh::model::occ::rotate({ {1, ell} }, 0, 0, 0, 1, 0, 0, std::atan2(-helixR, tz));
+    gmsh::model::occ::translate({ {1, ell} }, cx + helixR, cy, zBottom);
     int loop = gmsh::model::occ::addCurveLoop({ ell });
     int face = gmsh::model::occ::addPlaneSurface({ loop });
 

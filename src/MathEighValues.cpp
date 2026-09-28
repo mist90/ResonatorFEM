@@ -271,6 +271,7 @@ bool MathEighValVectorShiftInvertGauged(const Eigen::SparseMatrix<double>& matri
                                         const std::vector<double>& dofLen,
                                         const std::vector<char>& interiorNode,
                                         uint32_t nNodes, double penaltyS, double sigma, int nev,
+                                        EigenSolverKind solver,
                                         std::vector<double>& eighValue, std::vector<double>& eigVector)
 {
     if(matrixA.rows() != matrixA.cols()) return false;
@@ -324,11 +325,10 @@ bool MathEighValVectorShiftInvertGauged(const Eigen::SparseMatrix<double>& matri
 
     Eigen::VectorXd vals;
     Eigen::MatrixXd vecs;
-    /* Solver: default is Spectra shift-invert (direct factorization, robust but
-     * memory-heavy on fine 3D meshes). RESONATOR_SOLVER=lobpcg selects the
-     * iterative low-memory LOBPCG; if it fails it falls back to shift-invert. */
-    const char* solver = std::getenv("RESONATOR_SOLVER");
-    if(solver && std::strcmp(solver, "lobpcg") == 0) {
+    /* Solver: Spectra shift-invert (direct factorization, robust but memory-heavy
+     * on fine 3D meshes) or the iterative low-memory LOBPCG, which falls back to
+     * shift-invert if it fails. */
+    if(solver == EIGSOLVER_LOBPCG) {
         int    maxIter = 800;
         double tol     = 1e-4;   /* eigenvalue error ~ tol^2, so ~1e-8 — plenty */
         if(const char* mi = std::getenv("LOBPCG_ITERS")) maxIter = std::atoi(mi);

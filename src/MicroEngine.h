@@ -52,6 +52,10 @@ public:
     /* Grad-div penalty (factor * meanDiag(S)): lifts the gradient null space so the
      * physical modes become the smallest eigenvalues. 0 disables it. */
     void            setGradDivPenalty(double factor);
+    /* Eigensolver for the grad-div penalty path. Defaults to shift-invert, or to
+     * LOBPCG when the environment has RESONATOR_SOLVER=lobpcg. */
+    void            setEigenSolver(EigenSolverKind kind) { eigenSolver = kind; }
+    EigenSolverKind getEigenSolver() const { return eigenSolver; }
     /* Relative permittivity of the fill medium between core and walls. 1 = vacuum. */
     void            setFillPermittivity(double eps) { fillPermittivity = eps; }
     /* Tree-cotree gauging — experimental, off by default (see MicroEngine.cpp). */
@@ -107,6 +111,7 @@ private:
     std::set<std::pair<uint32_t, uint32_t> > gaugeEdges;
     /* Grad-div penalty weight factor (0 = off). */
     double          penaltyFactor;
+    EigenSolverKind eigenSolver;
     /* Relative permittivity of the fill medium between core and walls; 1 = vacuum. */
     double          fillPermittivity = 1.0;
     /* Cooperative-abort flag (not owned); null = never aborts. */

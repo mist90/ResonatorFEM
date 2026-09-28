@@ -93,6 +93,13 @@ MainDialog::MainDialog()
                             "curvature refinement. Higher = finer / more accurate.");
     numModesEdit = new QLineEdit("8"); numModesEdit->setValidator(new QIntValidator(1, 100));
     penaltyEdit  = field("50");
+    solverCombo = new QComboBox();   /* index == EigenSolverKind */
+    solverCombo->addItems({ "Shift-invert", "LOBPCG" });
+    solverCombo->setCurrentIndex(engine->getEigenSolver());
+    solverCombo->setToolTip("Shift-invert: sparse direct factorization — robust, but\n"
+                            "memory-heavy on fine meshes.\n"
+                            "LOBPCG: iterative, low memory; falls back to shift-invert\n"
+                            "if it does not converge. Used when penalty factor > 0.");
     fillEpsEdit  = field("1");
     fillEpsEdit->setToolTip("Relative permittivity of the medium filling the cavity\n"
                             "between the core and the walls. 1 = vacuum.");
@@ -128,6 +135,7 @@ MainDialog::MainDialog()
     solveForm->addRow("fill εᵣ (1=vacuum)", fillEpsEdit);
     solveForm->addRow("# modes", numModesEdit);
     solveForm->addRow("penalty factor", penaltyEdit);
+    solveForm->addRow("eigensolver", solverCombo);
     controls->addLayout(solveForm);
     controls->addWidget(buildMeshButton);
     controls->addWidget(computeButton);
@@ -261,6 +269,7 @@ void MainDialog::setBusy(bool busy)
 {
     buildMeshButton->setEnabled(!busy);
     computeButton->setEnabled(!busy);
+    solverCombo->setEnabled(!busy);
     resultsList->setEnabled(!busy);
     abortButton->setEnabled(busy);
 }
@@ -326,10 +335,11 @@ void MainDialog::computeSlot()
     ResonatorSpec spec = readSpec();
     double penalty = penaltyEdit->text().toDouble();
     int    nModes  = numModesEdit->text().toInt();
+    EigenSolverKind solver = (EigenSolverKind)solverCombo->currentIndex();
     log("Meshing (Gmsh/OpenCASCADE)... (background)");
 
     solveAfterMesh = true;
-    worker->setFuture(QtConcurrent::run([this, spec, penalty, nModes]() {
+    worker->setFuture(QtConcurrent::run([this, spec, penalty, nModes, solver]() {
         PipelineResult r;
         std::string err;
         if (!CsgGmshMesher::buildResonator(spec, mesh, &err)) {
@@ -341,6 +351,7 @@ void MainDialog::computeSlot()
         r.tets  = mesh.tets.size();
         engine->setResonatorMode(true);
         engine->setGradDivPenalty(penalty);
+        engine->setEigenSolver(solver);
         engine->setFillPermittivity(spec.fillEpsilon);
         engine->setResonatorSolveTarget(0.001, nModes > 0 ? nModes : 8);
         if (!engine->generateFromMesh(mesh)) {

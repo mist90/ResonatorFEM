@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <cstdint>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <Eigen/SparseCore>
 #include <Eigen/Dense>
@@ -61,6 +63,9 @@ MicroEngine::MicroEngine()
      * grad-div penalty (see docs/RESULTS.md). Kept behind a flag for study. */
     useGauge = false;
     penaltyFactor = 0.0;
+    const char* solver = std::getenv("RESONATOR_SOLVER");
+    eigenSolver = (solver && std::strcmp(solver, "lobpcg") == 0) ? EIGSOLVER_LOBPCG
+                                                                 : EIGSOLVER_SHIFT_INVERT;
 }
 
 bool MicroEngine::generateFromMesh(const FemMesh &mesh)
@@ -387,7 +392,7 @@ bool MicroEngine::calculateResonatorMode(std::vector<double> &epsilonValuesTetra
     if(penaltyS > 0.0)
         solved = MathEighValVectorShiftInvertGauged(globalMatrixT, globalMatrixR, dofNodes, dofLen,
                      interiorNode, grid.getNumNodes(), penaltyS, (solveSigmaK2 >= 0.0 ? solveSigmaK2 : 0.0),
-                     solveNev, eighValue, rootsGlobalMatrix);
+                     solveNev, eigenSolver, eighValue, rootsGlobalMatrix);
     else if(solveSigmaK2 >= 0.0)
         solved = MathEighValVectorShiftInvert(globalMatrixT, globalMatrixR, solveSigmaK2, solveNev, eighValue, rootsGlobalMatrix);
     else
