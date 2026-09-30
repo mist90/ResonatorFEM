@@ -9,6 +9,7 @@
 #include <QLocale>
 #include <QFileDialog>
 #include <QListWidgetItem>
+#include <QScrollArea>
 #include <QTimer>
 #include <QtConcurrent>
 #include <QFuture>
@@ -37,8 +38,12 @@ static QLineEdit* field(const QString& val)
 MainDialog::MainDialog()
 {
     setWindowTitle("ResonatorFEM");
-    /* Allow maximising/minimising this dialog from the title bar (expand button). */
-    setWindowFlags(windowFlags() | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+    /* Allow maximising/minimising from the title bar. A plain QDialog is a
+     * Qt::Dialog-type window, which many window managers render *without* a
+     * maximise button even when the hint is set. Promoting it to Qt::Window
+     * (a normal top-level window) makes the min/max/close buttons show up. */
+    setWindowFlags(Qt::Window | Qt::WindowMinimizeButtonHint
+                   | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
     view   = new ResonatorView();
     engine = new MicroEngine();
 
@@ -167,8 +172,19 @@ MainDialog::MainDialog()
 
     QHBoxLayout* root = new QHBoxLayout(this);
     QWidget* controlsW = new QWidget(); controlsW->setLayout(controls);
-    controlsW->setMaximumWidth(340);
-    root->addWidget(controlsW);
+
+    /* Wrap the settings column in a scroll area so every control stays reachable
+     * when the window is short or all the parameter forms are expanded. */
+    QScrollArea* controlsScroll = new QScrollArea();
+    controlsScroll->setWidget(controlsW);
+    controlsScroll->setWidgetResizable(true);
+    controlsScroll->setFrameShape(QFrame::NoFrame);
+    controlsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    controlsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    /* 340 for the content + a little room for the vertical scrollbar. */
+    controlsScroll->setMinimumWidth(360);
+    controlsScroll->setMaximumWidth(360);
+    root->addWidget(controlsScroll);
     root->addLayout(viewCol, 1);
 
     connect(cavityCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(cavityChanged()));

@@ -53,7 +53,7 @@ public:
      * physical modes become the smallest eigenvalues. 0 disables it. */
     void            setGradDivPenalty(double factor);
     /* Eigensolver: shift-invert (uses the grad-div penalty) or hypre AME (ignores
-     * it). Defaults to shift-invert, or to AME when RESONATOR_SOLVER=ame. */
+     * it). Defaults to hypre AME, or to shift-invert when RESONATOR_SOLVER=shift. */
     void            setEigenSolver(EigenSolverKind kind) { eigenSolver = kind; }
     EigenSolverKind getEigenSolver() const { return eigenSolver; }
     /* Relative permittivity of the fill medium between core and walls. 1 = vacuum. */

@@ -63,9 +63,14 @@ MicroEngine::MicroEngine()
      * grad-div penalty (see docs/RESULTS.md). Kept behind a flag for study. */
     useGauge = false;
     penaltyFactor = 0.0;
+    /* Default to hypre AME (low memory, scales to fine meshes, removes the
+     * gradient null space itself). Set RESONATOR_SOLVER=shift (or si) to fall
+     * back to the shift-invert direct solver. */
     const char* solver = std::getenv("RESONATOR_SOLVER");
-    eigenSolver = (solver && std::strcmp(solver, "ame") == 0) ? EIGSOLVER_AME
-                                                                 : EIGSOLVER_SHIFT_INVERT;
+    bool wantShift = solver && (std::strcmp(solver, "shift") == 0 ||
+                                std::strcmp(solver, "si") == 0 ||
+                                std::strcmp(solver, "shift-invert") == 0);
+    eigenSolver = wantShift ? EIGSOLVER_SHIFT_INVERT : EIGSOLVER_AME;
 }
 
 bool MicroEngine::generateFromMesh(const FemMesh &mesh)
