@@ -6,7 +6,7 @@ open-source **Gmsh** library on its **OpenCASCADE** kernel; the FEM assembly and
 GUI are reworked from the original *MicroLBWave* education project, whose
 hand-written Delaunay mesher is replaced here by conforming CSG-based meshes.
 
-<img width="1386" height="941" alt="image" src="https://github.com/user-attachments/assets/b3215309-989a-486a-9236-c842846da18a" />
+<img width="1916" height="1050" alt="screen" src="https://github.com/user-attachments/assets/8aa0e08b-fff3-441b-b5c4-a38582f1575b" />
 
 
 ## Capabilities
